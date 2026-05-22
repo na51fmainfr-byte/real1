@@ -1,0 +1,25 @@
+{
+  "name": "one-piece-bot",
+  "version": "1.0.1",
+  "description": "One Piece themed Discord bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "deploy": "node deploy-commands.js",
+    "normalize-rods": "node scripts/normalize-rods.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@discordjs/rest": "^1.6.0",
+    "@napi-rs/canvas": "^0.1.17",
+    "discord-api-types": "^0.37.48",
+    "discord.js": "^14.16.0",
+    "dotenv": "^16.3.1",
+    "express": "^5.2.1",
+    "fuse.js": "^7.3.0",
+    "jimp": "^0.22.10",
+    "mongoose": "^7.6.1"
+  }
+}

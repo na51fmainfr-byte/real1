@@ -1,0 +1,51 @@
+modules = ["nodejs-18", "python-3.12"]
+[agent]
+expertMode = true
+stack = "BEST_EFFORT_FALLBACK"
+
+[nix]
+channel = "stable-25_05"
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm start"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow]]
+name = "push to jrma"
+mode = "sequential"
+author = 39764317
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "git push -u https://d7D5T:r8DHf9i6KPj4@justrunmy.app/git/a27057_Ds62 HEAD:deploy"
+
+[userenv]
+
+[userenv.shared]
+OWNER_ID = "1257718161298690119"
+
+[deployment]
+deploymentTarget = "cloudrun"
+
+[[ports]]
+localPort = 3000
+externalPort = 80

@@ -2,8 +2,23 @@ let createCanvas, loadImage;
 let _imageCache = null;
 let loadImageCached = null;
 let CANVAS_AVAILABLE = true;
+
+// Try preferred fast native binding first, then fall back to node-canvas
 try {
   ({ createCanvas, loadImage } = require('@napi-rs/canvas'));
+} catch (e1) {
+  try {
+    // node-canvas exposes createCanvas and loadImage as properties
+    const nodeCanvas = require('canvas');
+    createCanvas = nodeCanvas.createCanvas;
+    loadImage = nodeCanvas.loadImage;
+  } catch (e2) {
+    CANVAS_AVAILABLE = false;
+    console.warn('[teamImage] canvas not available; using lightweight fallback (no images)');
+  }
+}
+
+if (CANVAS_AVAILABLE) {
   // Module-level cache keyed by URL — stores Promises so concurrent calls
   // for the same URL share one CDN request instead of firing duplicates.
   _imageCache = new Map();
@@ -21,9 +36,6 @@ try {
     _imageCache.set(url, promise);
     return promise;
   };
-} catch (e) {
-  CANVAS_AVAILABLE = false;
-  console.warn('[teamImage] @napi-rs/canvas not available; using lightweight fallback (no images)');
 }
 
 function parseDiscordEmojiUrl(emojiString) {
@@ -83,7 +95,70 @@ const PLACEHOLDER_PNG = Buffer.from(
 
 async function generateTeamImage({ username, totalPower, cards, backgroundUrl }) {
   if (!CANVAS_AVAILABLE) {
-    return PLACEHOLDER_PNG;
+    // Fallback to Jimp-based image generation so we still return a useful
+    // team image (with total power and username) when native canvas isn't
+    // available in the environment.
+    try {
+      const Jimp = require('jimp');
+      const width = 980;
+      const height = 520;
+      const image = new Jimp(width, height, 0x0c1221ff);
+
+      // translucent overlay
+      const overlay = new Jimp(width, height, 0x06122bbf);
+      image.composite(overlay, 0, 0);
+
+      const fontSmall = await Jimp.loadFont(Jimp.FONT_SANS_32_WHITE);
+      const fontLarge = await Jimp.loadFont(Jimp.FONT_SANS_64_WHITE);
+      const fontMedium = await Jimp.loadFont(Jimp.FONT_SANS_16_WHITE);
+
+      // TOTAL POWER label
+      image.print(fontSmall, 0, 32, {
+        text: 'TOTAL POWER',
+        alignmentX: Jimp.HORIZONTAL_ALIGN_CENTER
+      }, width);
+
+      // numeric total
+      image.print(fontLarge, 0, 96, {
+        text: (totalPower || 0).toLocaleString(),
+        alignmentX: Jimp.HORIZONTAL_ALIGN_CENTER
+      }, width);
+
+      // draw three card placeholders
+      const cardSizes = [190, 240, 190];
+      const positions = [220, 490, 760];
+      const squareYs = [200, 180, 200];
+
+      for (let i = 0; i < 3; i++) {
+        const cardSize = cardSizes[i];
+        const x = positions[i] - cardSize / 2;
+        const squareY = squareYs[i];
+
+        const box = new Jimp(cardSize + 20, cardSize + 20, 0x1f2f58ff);
+        image.composite(box, x - 10, squareY - 10);
+
+        const card = cards[i];
+        if (card) {
+          // Draw initial letters as fallback
+          const initials = (card.character || '').slice(0, 2).toUpperCase();
+          image.print(fontMedium, x, squareY + cardSize / 2 - 8, {
+            text: initials,
+            alignmentX: Jimp.HORIZONTAL_ALIGN_CENTER
+          }, cardSize);
+        }
+      }
+
+      // username's team label
+      image.print(fontSmall, 0, height - 56, {
+        text: `${username}'s team`,
+        alignmentX: Jimp.HORIZONTAL_ALIGN_CENTER
+      }, width);
+
+      const buf = await image.getBufferAsync(Jimp.MIME_PNG);
+      return buf;
+    } catch (e) {
+      return PLACEHOLDER_PNG;
+    }
   }
 
   const width = 980;

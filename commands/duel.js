@@ -1222,6 +1222,10 @@ module.exports = {
       return interaction.reply({ content: 'It is not your turn.', ephemeral: true });
     }
 
+    // Defer immediately after quick validation to avoid "This interaction failed"
+    // (Discord requires a response within 3 seconds; DB lookups below can exceed that)
+    await safeDefer(interaction);
+
     const myTeam = isPlayer1 ? state.player1Cards : state.player2Cards;
     const opponentTeam = isPlayer1 ? state.player2Cards : state.player1Cards;
     const myId = isPlayer1 ? state.player1Id : state.player2Id;
@@ -1379,14 +1383,18 @@ module.exports = {
 
       // Build a compact action summary
       const names = targets.map(t => `${t.def.emoji || ''} ${t.def.character}`).join(', ');
-      const dmgSummary = perTargetDmg.length ? (perTargetDmg.every(d => d === perTargetDmg[0]) ? `**${perTargetDmg[0]} DMG** each` : perTargetDmg.map(d => `**${d}**`).join('/')) : '**0 DMG**';
+      const dmgSummary = perTargetDmg.length
+        ? (perTargetDmg.length === 1
+          ? `**${perTargetDmg[0]} DMG**`
+          : (perTargetDmg.every(d => d === perTargetDmg[0]) ? `**${perTargetDmg[0]} DMG** each` : perTargetDmg.map(d => `**${d}**`).join('/')))
+        : '**0 DMG**';
       const cost = action === 'attack' ? 1 : action === 'special' ? 3 : 0;
       const actionVerb = action === 'special' ? (card.def.special_attack?.name || 'Special Attack') : 'attacked';
-      const actionText = `${card.def.emoji} **${card.def.character}** ${action === 'special' ? 'used' : 'attacked'} ${action === 'special' ? actionVerb : names} for ${dmgSummary}! **<:energy:1478051414558118052> -${cost}**`;
+      const effectMessages = (effectLogs && effectLogs.length) ? ` *${effectLogs.join(', ')}*` : '';
+      const actionText = `${card.def.emoji} **${card.def.character}** ${action === 'special' ? 'used' : 'attacked'} ${action === 'special' ? actionVerb : names} for ${dmgSummary}!${effectMessages} **<:energy:1478051414558118052> -${cost}**`;
       if (isPlayer1) state.lastP1Action = actionText; else state.lastP2Action = actionText;
 
-      // Append effect logs and damage/reflection logs
-      if (effectLogs && effectLogs.length) effectLogs.forEach(l => appendLog(state, l));
+      // Append reflection/KO logs
       if (logs.length > 0) logs.forEach(l => appendLog(state, l));
 
       state.selected = null;
@@ -1578,13 +1586,17 @@ module.exports = {
 
           // Build action summary
           const names = targets.map(t => `${t.def.emoji || ''} ${t.def.character}`).join(', ');
-          const dmgSummary = perTargetDmg.length ? (perTargetDmg.every(d => d === perTargetDmg[0]) ? `**${perTargetDmg[0]} DMG** each` : perTargetDmg.map(d => `**${d}**`).join('/')) : '**0 DMG**';
+          const dmgSummary = perTargetDmg.length
+            ? (perTargetDmg.length === 1
+              ? `**${perTargetDmg[0]} DMG**`
+              : (perTargetDmg.every(d => d === perTargetDmg[0]) ? `**${perTargetDmg[0]} DMG** each` : perTargetDmg.map(d => `**${d}**`).join('/')))
+            : '**0 DMG**';
           const cost = act === 'attack' ? 1 : act === 'special' ? 3 : 0;
           const actionVerb = act === 'special' ? (card.def.special_attack?.name || 'Special Attack') : 'attacked';
-          const actionText = `${card.def.emoji} **${card.def.character}** ${act === 'special' ? 'used' : 'attacked'} ${act === 'special' ? actionVerb : names} for ${dmgSummary}! **<:energy:1478051414558118052> -${cost}**`;
+          const autoEffectMessages = (effectLogs && effectLogs.length) ? ` *${effectLogs.join(', ')}*` : '';
+          const actionText = `${card.def.emoji} **${card.def.character}** ${act === 'special' ? 'used' : 'attacked'} ${act === 'special' ? actionVerb : names} for ${dmgSummary}!${autoEffectMessages} **<:energy:1478051414558118052> -${cost}**`;
           if (isPlayer1) state.lastP1Action = actionText; else state.lastP2Action = actionText;
 
-          if (effectLogs && effectLogs.length) effectLogs.forEach(l => appendLog(state, l));
           if (logs.length > 0) logs.forEach(l => appendLog(state, l));
 
           state.selected = null;

@@ -1,6 +1,6 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder } = require('discord.js');
 const { createCanvas, loadImage } = require('@napi-rs/canvas');
-const { getCurrentStock, getStockCountdownString, getPricing, ensureStockUpToDate, getNextStockResetDate } = require('../src/stock');
+const { getCurrentStock, getStockCountdownString, getPricing, ensureStockUpToDate, getNextStockResetDate, getLastStockReset } = require('../src/stock');
 const User = require('../models/User');
 const { tryAcquire } = require('../utils/heavyCommandCooldown');
 
@@ -164,10 +164,14 @@ module.exports = {
       user = null;
     }
     if (user && user.localStock) {
-      stock = globalStock.map(p => {
-        const qty = typeof user.localStock[p.name] !== 'undefined' ? user.localStock[p.name] : p.quantity;
-        return { ...p, quantity: qty };
-      });
+      const lastReset = getLastStockReset();
+      const userSession = user.localStock._resetAt || 0;
+      if (userSession >= lastReset) {
+        stock = globalStock.map(p => {
+          const qty = typeof user.localStock[p.name] !== 'undefined' ? user.localStock[p.name] : p.quantity;
+          return { ...p, quantity: qty };
+        });
+      }
     }
 
     if (!stock.length) {
@@ -238,9 +242,20 @@ module.exports = {
       return interaction.reply({ content: `You need **${price}** Gems to buy ${pack.icon} **${pack.name}**.`, ephemeral: true });
     }
 
-    // Ensure per-user localStock key exists (set it if missing)
+    // Ensure per-user localStock is initialized for the current stock session.
+    // If the user's session (_resetAt) is older than the last stock reset, re-initialize
+    // all pack quantities from the current global stock so stale 0x entries don't carry over.
+    const lastReset = getLastStockReset();
     user.localStock = user.localStock || {};
-    if (typeof user.localStock[pack.name] === 'undefined') {
+    const userSession = user.localStock._resetAt || 0;
+    if (userSession < lastReset) {
+      const freshLocalStock = { _resetAt: lastReset };
+      for (const s of globalStock) {
+        freshLocalStock[s.name] = s.quantity;
+      }
+      await User.updateOne({ userId }, { $set: { localStock: freshLocalStock } }).catch(() => {});
+      user.localStock = freshLocalStock;
+    } else if (typeof user.localStock[pack.name] === 'undefined') {
       const match = globalStock.find(s => s.name === pack.name);
       const defaultQty = match ? (match.quantity || 0) : (pack.quantity || 0);
       await User.updateOne({ userId, [`localStock.${pack.name}`]: { $exists: false } }, { $set: { [`localStock.${pack.name}`]: defaultQty } }).catch(() => {});
@@ -249,7 +264,7 @@ module.exports = {
     // Perform atomic purchase: ensure gems and localStock available then decrement and increment packInventory
     const upd = await User.updateOne(
       { userId, gems: { $gte: price }, [`localStock.${pack.name}`]: { $gte: 1 } },
-      { $inc: { gems: -price, [`packInventory.${pack.name}`]: 1, [`localStock.${pack.name}`]: -1 } }
+      { $inc: { gems: -price, [`packInventory.${pack.name}`]: 1, [`localStock.${pack.name}`]: -1 }, $set: { 'localStock._resetAt': lastReset } }
     );
 
     if (!upd || upd.modifiedCount === 0) {

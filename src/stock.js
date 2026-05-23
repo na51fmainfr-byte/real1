@@ -261,6 +261,7 @@ function initStockSystem() {
 module.exports = {
   initStockSystem,
   getCurrentStock: () => currentStock,
+  getLastStockReset: () => lastStockReset,
   getPricing: () => PRICING,
   getCountdownString,
   getStockCountdownString,

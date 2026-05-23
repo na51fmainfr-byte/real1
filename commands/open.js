@@ -1,6 +1,7 @@
 const User = require('../models/User');
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder } = require('discord.js');
 const { simulatePull, buildPullEmbed, getAllCardVersions, getCardById, applyXpToEquippedArtifact } = require('../utils/cards');
+const { generateArtifactImage } = require('../utils/artifactImage');
 const { cards } = require('../data/cards');
 const crews = require('../data/crews');
 const { levelers } = require('../data/levelers');
@@ -578,10 +579,22 @@ module.exports = {
     if (!global.packSessions) global.packSessions = new Map();
     global.packSessions.set(`${userId}_pack`, { cards: pulledCards, pack: matchedPack, starIds });
 
+    // Attach generated image for first pulled card when artifact
+    let files;
+    try {
+      const firstCard = pulledCards[0] && pulledCards[0].card;
+      if (firstCard && firstCard.artifact) {
+        const buf = await generateArtifactImage(firstCard);
+        files = [new AttachmentBuilder(buf, { name: `artifact-${firstCard.id}.png` })];
+      }
+    } catch (e) {
+      console.error('Failed to generate artifact image for open execute', e);
+    }
+
     if (message) {
-      const sent = await message.channel.send({ embeds: [firstEmbed], components: [row] });
+      const sent = await message.channel.send({ embeds: [firstEmbed], components: [row], files });
     } else {
-      await interaction.reply({ embeds: [firstEmbed], components: [row] });
+      await interaction.reply({ embeds: [firstEmbed], components: [row], files });
     }
   },
 
@@ -618,6 +631,18 @@ module.exports = {
         .setStyle(ButtonStyle.Primary)
     )];
 
-    await interaction.update({ embeds: [embed], components: row });
+    // Attach generated image for the next card page when artifact
+    try {
+      const nextCard = pulledCards[nextIndex] && pulledCards[nextIndex].card;
+      let files;
+      if (nextCard && nextCard.artifact) {
+        const buf = await generateArtifactImage(nextCard);
+        files = [new AttachmentBuilder(buf, { name: `artifact-${nextCard.id}.png` })];
+      }
+      await interaction.update({ embeds: [embed], components: row, files });
+    } catch (e) {
+      console.error('Failed to generate artifact image for open update', e);
+      await interaction.update({ embeds: [embed], components: row });
+    }
   }
 };

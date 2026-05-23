@@ -222,7 +222,8 @@ module.exports = {
       return interaction.reply({ content: 'That pack is sold out.', ephemeral: true });
     }
 
-    let user = await User.findOne({ userId: interaction.user.id });
+    const userId = interaction.user.id;
+    let user = await User.findOne({ userId });
     if (!user) {
       return interaction.reply({ content: 'You need an account first – run `op start` or /start.', ephemeral: true });
     }
@@ -232,27 +233,36 @@ module.exports = {
       return interaction.reply({ content: `You need **${price}** Gems to buy ${pack.icon} **${pack.name}**.`, ephemeral: true });
     }
 
-    // Per-user stock: initialize local stock on first interaction and decrement only for this user
+    // Ensure per-user localStock key exists (set it if missing)
     user.localStock = user.localStock || {};
     if (typeof user.localStock[pack.name] === 'undefined') {
       const match = globalStock.find(s => s.name === pack.name);
-      user.localStock[pack.name] = match ? (match.quantity || 0) : (pack.quantity || 0);
-    }
-    if (user.localStock[pack.name] < 1) {
-      return interaction.reply({ content: `Not enough stock remaining for ${pack.name} packs.`, ephemeral: true });
+      const defaultQty = match ? (match.quantity || 0) : (pack.quantity || 0);
+      await User.updateOne({ userId, [`localStock.${pack.name}`]: { $exists: false } }, { $set: { [`localStock.${pack.name}`]: defaultQty } }).catch(() => {});
     }
 
-    user.localStock[pack.name] -= 1;
-    user.gems -= price;
-    user.packInventory = user.packInventory || {};
-    user.packInventory[pack.name] = (user.packInventory[pack.name] || 0) + 1;
-    user.markModified('packInventory');
-    user.markModified('localStock');
-    await user.save();
+    // Perform atomic purchase: ensure gems and localStock available then decrement and increment packInventory
+    const upd = await User.updateOne(
+      { userId, gems: { $gte: price }, [`localStock.${pack.name}`]: { $gte: 1 } },
+      { $inc: { gems: -price, [`packInventory.${pack.name}`]: 1, [`localStock.${pack.name}`]: -1 } }
+    );
+
+    if (!upd || upd.modifiedCount === 0) {
+      // Reload user to give a better error message
+      const fresh = await User.findOne({ userId });
+      if (!fresh || (fresh.gems || 0) < price) {
+        return interaction.reply({ content: `You need **${price}** Gems to buy ${pack.icon} **${pack.name}**.`, ephemeral: true });
+      }
+      if (!fresh.localStock || (fresh.localStock[pack.name] || 0) < 1) {
+        return interaction.reply({ content: `Not enough stock remaining for ${pack.name} packs.`, ephemeral: true });
+      }
+      return interaction.reply({ content: 'Purchase failed due to a concurrent update. Please try again.', ephemeral: true });
+    }
 
     const updatedGlobal = getCurrentStock().slice(0, 3);
-    const updatedStock = (user && user.localStock) ? updatedGlobal.map(p => {
-      const qty = typeof user.localStock[p.name] !== 'undefined' ? user.localStock[p.name] : p.quantity;
+    const freshUser = await User.findOne({ userId });
+    const updatedStock = (freshUser && freshUser.localStock) ? updatedGlobal.map(p => {
+      const qty = typeof freshUser.localStock[p.name] !== 'undefined' ? freshUser.localStock[p.name] : p.quantity;
       return { ...p, quantity: qty };
     }) : updatedGlobal;
 

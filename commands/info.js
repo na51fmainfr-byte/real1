@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder } = require('discord.js');
 const { searchCards, buildCardEmbed, getCardFinalStats, getAttributeEmoji, updateShipBalance, buildDurabilityBar, getShipById, getCardById } = require('../utils/cards');
 const { sortedOwnedCards } = require('./collection');
 const User = require('../models/User');
@@ -6,6 +6,7 @@ const { cards } = require('../data/cards');
 const { rods } = require('../data/rods');
 const { levelers } = require('../data/levelers');
 const crews = require('../data/crews');
+const { generateArtifactImage } = require('../utils/artifactImage');
 
 // Helpers to safely send/update interaction payloads and strip undefined fields
 function isBuilder(obj) {
@@ -199,7 +200,19 @@ async function renderInfoCard(interaction, session, user, index) {
   const isOwned = userEntry !== null;
   const rows = makeInfoRows(interaction.user.id, index, session.cards.length, cardDef, isOwned);
   session.currentIndex = index;
-  return safeUpdate(interaction, { embeds: [embed], components: rows.length ? rows : undefined });
+  // If this is an artifact, generate and attach a consistent image
+  let files;
+  if (cardDef && cardDef.artifact) {
+    try {
+      const buf = await generateArtifactImage(cardDef);
+      const att = new AttachmentBuilder(buf, { name: `artifact-${cardDef.id}.png` });
+      files = [att];
+    } catch (e) {
+      console.error('Failed to generate artifact image for info render', e);
+    }
+  }
+
+  return safeUpdate(interaction, { embeds: [embed], components: rows.length ? rows : undefined, files });
 }
 
 function normalizeCrewName(name) {
@@ -313,7 +326,7 @@ function buildRodEmbed(rodDef, discordUser, user) {
     );
   
   if (rodItem && rodItem.durability !== undefined) {
-    const durabilityBar = buildDurabilityBar(rodItem.durability, rodDef.durability);
+    const durabilityBar = buildDurabilityBar(rodItem.durability, rodDef.durability, 'rod');
     embed.addFields({ name: 'Durability Bar', value: `${durabilityBar} (${rodItem.durability}/${rodDef.durability})`, inline: false });
   }
   
@@ -713,8 +726,20 @@ module.exports = {
     const isOwned = userEntry !== null;
     const rows = makeInfoRows(session.userId, currentIndex, session.cards.length, cardDef, isOwned);
 
-    if (message) return message.channel.send({ embeds: [embed], components: rows.length ? rows : [] });
-    return safeReply(interaction, { embeds: [embed], components: rows.length ? rows : [] });
+    // If artifact, generate an attachment for the embed
+    let files;
+    if (cardDef && cardDef.artifact) {
+      try {
+        const buf = await generateArtifactImage(cardDef);
+        const att = new AttachmentBuilder(buf, { name: `artifact-${cardDef.id}.png` });
+        files = [att];
+      } catch (e) {
+        console.error('Failed to generate artifact image for info execute', e);
+      }
+    }
+
+    if (message) return message.channel.send({ embeds: [embed], components: rows.length ? rows : [], files });
+    return safeReply(interaction, { embeds: [embed], components: rows.length ? rows : [], files });
   },
 
   async handleButton(interaction, action, indexPart) {

@@ -251,6 +251,9 @@ async function main() {
         if (action === 'market_rank' || action === 'market_attr' || action === 'market_star' || action === 'market_buy') {
           return marketCmd.handleSelect(interaction);
         }
+        if (action === 'marketcancel') {
+          return marketListingsCmd.handleSelect(interaction);
+        }
       }
 
       if (interaction.isChatInputCommand()) {
@@ -353,9 +356,21 @@ async function main() {
               .setStyle(nextAvailable ? ButtonStyle.Primary : ButtonStyle.Secondary)
               .setDisabled(!nextAvailable)
           );
+          // Attach generated artifact image when navigating mastery pages
+          let files;
+          if (newDef && newDef.artifact && !newDef.image_url) {
+            try {
+              const { generateArtifactImage } = require('./utils/artifactImage');
+              const { AttachmentBuilder } = require('discord.js');
+              const buf = await generateArtifactImage(newDef);
+              files = [new AttachmentBuilder(buf, { name: `artifact-${newDef.id}.png` })];
+            } catch (e) {
+              console.error('Failed to generate artifact image for mastery nav', e);
+            }
+          }
           // use safeUpdate to avoid throwing on expired/unknown interactions
-          if (global && typeof global.safeUpdate === 'function') return global.safeUpdate(interaction, { embeds: [embed], components: [row] });
-          return global.safeUpdate(interaction, { embeds: [embed], components: [row] });
+          if (global && typeof global.safeUpdate === 'function') return global.safeUpdate(interaction, { embeds: [embed], components: [row], files });
+          return global.safeUpdate(interaction, { embeds: [embed], components: [row], files });
         }
 
         // handle reset token confirmation

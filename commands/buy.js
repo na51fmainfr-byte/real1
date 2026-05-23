@@ -173,24 +173,39 @@ module.exports = {
         if (message) return message.reply(reply);
         return interaction.reply({ content: reply, ephemeral: true });
       }
-      // per-user stock: initialize local copy on first purchase and decrement only for this user
+
+      // Ensure per-user localStock key exists (set if missing)
       user.localStock = user.localStock || {};
       if (typeof user.localStock[item.crew.name] === 'undefined') {
         const globalStock = getCurrentStock();
         const match = globalStock.find(s => s.name === item.crew.name);
-        user.localStock[item.crew.name] = match ? (match.quantity || 0) : 0;
+        const defaultQty = match ? (match.quantity || 0) : 0;
+        await User.updateOne({ userId, [`localStock.${item.crew.name}`]: { $exists: false } }, { $set: { [`localStock.${item.crew.name}`]: defaultQty } }).catch(() => {});
       }
-      if (user.localStock[item.crew.name] < amount) {
-        const reply = `Not enough stock remaining for ${item.crew.name} packs.`;
-        if (message) return message.reply(reply);
-        return interaction.reply({ content: reply, ephemeral: true });
+
+      // Atomic update: decrement gems and localStock, increment packInventory
+      const upd = await User.updateOne(
+        { userId, gems: { $gte: totalCost }, [`localStock.${item.crew.name}`]: { $gte: amount } },
+        { $inc: { gems: -totalCost, [`packInventory.${item.crew.name}`]: amount, [`localStock.${item.crew.name}`]: -amount } }
+      );
+      if (!upd || upd.modifiedCount === 0) {
+        const fresh = await User.findOne({ userId });
+        if (!fresh || (fresh.gems || 0) < totalCost) {
+          const reply = `You need **${totalCost}** Gems to buy ${amount}x ${item.name}. You only have **${fresh ? fresh.gems || 0 : 0}** Gems.`;
+          if (message) return message.reply(reply);
+          return interaction.reply({ content: reply, ephemeral: true });
+        }
+        if (!fresh.localStock || (fresh.localStock[item.crew.name] || 0) < amount) {
+          const reply = `Not enough stock remaining for ${item.crew.name} packs.`;
+          if (message) return message.reply(reply);
+          return interaction.reply({ content: reply, ephemeral: true });
+        }
+        return interaction.reply({ content: 'Purchase failed due to a concurrent update. Please try again.', ephemeral: true });
       }
-      user.localStock[item.crew.name] -= amount;
-      // deduct user gems and add packs
-      user.gems -= totalCost;
-      user.packInventory[item.crew.name] = (user.packInventory[item.crew.name] || 0) + amount;
-      user.markModified('packInventory');
-      user.markModified('localStock');
+      // Success - reply and return early (no need to save user document here)
+      const successReply = `Successfully purchased **${amount}x ${item.name}** for **${totalCost}** ${costCurrency}!`;
+      if (message) return message.reply(successReply);
+      return interaction.reply({ content: successReply });
     } else if (item.type === 'rod') {
       // Rod purchase: Rods cost Beli and add to inventory
       if (amount !== 1) {

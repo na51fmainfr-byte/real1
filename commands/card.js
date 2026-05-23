@@ -1,6 +1,7 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder } = require('discord.js');
 const { searchCards } = require('../utils/cards');
 const User = require('../models/User');
+const { generateArtifactImage } = require('../utils/artifactImage');
 
 function makeComponents(cardDef) {
   const prevAvailable = cardDef.mastery > 1;
@@ -50,8 +51,19 @@ module.exports = {
     const embed = buildCardEmbed(cardDef, userEntry, avatarUrl, userDoc);
     const components = [makeComponents(cardDef)];
 
-    if (message) return message.channel.send({ embeds: [embed], components });
-    return interaction.reply({ embeds: [embed], components });
+    // Attach generated artifact image when appropriate
+    let files;
+    if (cardDef && cardDef.artifact) {
+      try {
+        const buf = await generateArtifactImage(cardDef);
+        files = [new AttachmentBuilder(buf, { name: `artifact-${cardDef.id}.png` })];
+      } catch (e) {
+        console.error('Failed to generate artifact image for card command', e);
+      }
+    }
+
+    if (message) return message.channel.send({ embeds: [embed], components, files });
+    return interaction.reply({ embeds: [embed], components, files });
   }
 };
 

@@ -2683,7 +2683,7 @@ exports.moreCards = [
 		itself: true,
 		effectDuration: -1,
 		effectAmount: 20,
-		Count: 3,
+		count: 3,
 		image_url: 'https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/4/100/4111.png'
 	},
 	{

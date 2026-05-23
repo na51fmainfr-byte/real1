@@ -1,7 +1,8 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
 const User = require('../models/User');
 const MarketListing = require('../models/MarketListing');
 const { formatCardId } = require('../utils/cards');
+const { getMaxStarForRank } = require('../utils/starLevel');
 
 const BELI_EMOJI = '<:beri:1490738445319016651>';
 const RANK_EMOJIS = {
@@ -65,11 +66,10 @@ async function execute({ message, interaction, args }) {
     return sent;
   }
 
-  const components = [];
-  for (const listing of listings) {
-    const rankEmoji = RANK_EMOJIS[listing.cardRank] || '';
+  const options = listings.map(listing => {
     const cardEmoji = listing.cardEmoji ? listing.cardEmoji + ' ' : '';
-    const starStr = listing.starLevel > 0 ? ` ${'⭐'.repeat(listing.starLevel)}` : '';
+    const maxStar = getMaxStarForRank(listing.cardRank || 'D');
+    const starStr = (typeof listing.starLevel === 'number' && listing.starLevel >= maxStar) ? ' <:MAXstarlevel:1505618736516825180>' : '';
     const priceStr = formatPrice(listing.price);
     const expires = timeLeft(listing.expiresAt);
 
@@ -79,15 +79,21 @@ async function execute({ message, interaction, args }) {
       inline: false,
     });
 
-    if (isOwn && components.length < 4) {
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`marketcancel:${authorId}:${listing._id}`)
-          .setLabel(`Cancel: ${listing.cardName.slice(0, 40)}`)
-          .setStyle(ButtonStyle.Danger)
-      );
-      components.push(row);
-    }
+    const label = `${listing.cardName} (Lvl. ${listing.level}) — ${priceStr} beli`.slice(0, 100);
+    const desc = `ID: ${formatCardId(listing.cardId)} | Expires: ${expires}`.slice(0, 100);
+    return { label, description: desc, value: listing._id.toString() };
+  });
+
+  const components = [];
+  if (isOwn) {
+    const chooseRow = new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`marketcancel:${authorId}`)
+        .setPlaceholder('Select a listing to cancel')
+        .setDisabled(!options.length)
+        .addOptions(options.length ? options : [{ label: 'No listings', value: 'none', description: '' }])
+    );
+    components.push(chooseRow);
   }
 
   if (message) return message.reply({ embeds: [embed], components });
@@ -137,15 +143,19 @@ async function handleButton(interaction) {
   const updatedEmbed = EmbedBuilder.from(embed).setFooter({ text: `${remainingListings.length} active listing${remainingListings.length !== 1 ? 's' : ''}` });
 
   const updatedComponents = [];
-  for (const l of remainingListings) {
-    if (updatedComponents.length >= 4) break;
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`marketcancel:${ownerId}:${l._id}`)
-        .setLabel(`Cancel: ${l.cardName.slice(0, 40)}`)
-        .setStyle(ButtonStyle.Danger)
-    );
-    updatedComponents.push(row);
+  if (remainingListings.length > 0) {
+    const opts = remainingListings.map(l => {
+      const priceStr = formatPrice(l.price);
+      const label = `${l.cardName} (Lvl. ${l.level}) — ${priceStr} beli`.slice(0, 100);
+      const desc = `ID: ${formatCardId(l.cardId)} | Expires: ${timeLeft(l.expiresAt)}`.slice(0, 100);
+      return { label, description: desc, value: l._id.toString() };
+    });
+    updatedComponents.push(new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`marketcancel:${ownerId}`)
+        .setPlaceholder('Select a listing to cancel')
+        .addOptions(opts)
+    ));
   }
 
   if (remainingListings.length === 0) {
@@ -156,4 +166,68 @@ async function handleButton(interaction) {
   return interaction.message.edit({ embeds: [updatedEmbed], components: updatedComponents }).catch(() => {});
 }
 
-module.exports = { execute, handleButton };
+async function handleSelect(interaction) {
+  const [action, ownerId] = interaction.customId.split(':');
+  if (interaction.user.id !== ownerId) {
+    return interaction.reply({ content: 'You can only cancel your own listings.', ephemeral: true });
+  }
+
+  const listingId = Array.isArray(interaction.values) && interaction.values.length ? interaction.values[0] : null;
+  if (!listingId || listingId === 'none') {
+    return interaction.reply({ content: 'No listing selected.', ephemeral: true });
+  }
+
+  const listing = await MarketListing.findById(listingId);
+  if (!listing) {
+    return interaction.reply({ content: 'This listing no longer exists.', ephemeral: true });
+  }
+  if (listing.sellerId !== ownerId) {
+    return interaction.reply({ content: 'This is not your listing.', ephemeral: true });
+  }
+
+  // Return the card to the seller since it was escrowed at listing time
+  try {
+    const seller = await User.findOne({ userId: ownerId });
+    if (seller) {
+      seller.ownedCards = seller.ownedCards || [];
+      if (!seller.ownedCards.some(e => e.cardId === listing.cardId)) {
+        seller.ownedCards.push({ cardId: listing.cardId, level: listing.level || 1, xp: listing.xp || 0, equippedTo: listing.equippedTo || null, starLevel: listing.starLevel || 0 });
+        await seller.save().catch(() => {});
+      }
+    }
+  } catch (e) {}
+
+  await MarketListing.findByIdAndDelete(listingId);
+
+  const BELI_EMOJI_LOCAL = '<:beri:1490738445319016651>';
+  await interaction.reply({ content: `Cancelled listing for **${listing.cardName}** (was ${formatPrice(listing.price)} ${BELI_EMOJI_LOCAL}).`, ephemeral: true });
+
+  const embed = interaction.message.embeds[0];
+  const remainingListings = await MarketListing.find({ sellerId: ownerId, expiresAt: { $gt: new Date() } }).sort({ createdAt: -1 });
+  const updatedEmbed = EmbedBuilder.from(embed).setFooter({ text: `${remainingListings.length} active listing${remainingListings.length !== 1 ? 's' : ''}` });
+
+  const updatedComponents = [];
+  if (remainingListings.length > 0) {
+    const opts = remainingListings.map(l => {
+      const priceStr = formatPrice(l.price);
+      const label = `${l.cardName} (Lvl. ${l.level}) — ${priceStr} beli`.slice(0, 100);
+      const desc = `ID: ${formatCardId(l.cardId)} | Expires: ${timeLeft(l.expiresAt)}`.slice(0, 100);
+      return { label, description: desc, value: l._id.toString() };
+    });
+    updatedComponents.push(new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`marketcancel:${ownerId}`)
+        .setPlaceholder('Select a listing to cancel')
+        .addOptions(opts)
+    ));
+  }
+
+  if (remainingListings.length === 0) {
+    updatedEmbed.setDescription('You have no active market listings.');
+    updatedEmbed.spliceFields(0, 25);
+  }
+
+  return interaction.message.edit({ embeds: [updatedEmbed], components: updatedComponents }).catch(() => {});
+}
+
+module.exports = { execute, handleButton, handleSelect };

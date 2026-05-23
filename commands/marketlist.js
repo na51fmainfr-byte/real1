@@ -3,6 +3,7 @@ const MarketListing = require('../models/MarketListing');
 const { getBotConfig } = require('../models/BotConfig');
 const { EmbedBuilder } = require('discord.js');
 const { searchCards, formatCardId, getCardById } = require('../utils/cards');
+const { getMaxStarForRank } = require('../utils/starLevel');
 
 const BELI_EMOJI = '<:beri:1490738445319016651>';
 const TWO_WEEKS_MS = 14 * 24 * 60 * 60 * 1000;
@@ -68,6 +69,12 @@ async function execute({ message, interaction, args }) {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + TWO_WEEKS_MS);
 
+  // Enforce per-user active listing limit (max 10)
+  const activeCount = await MarketListing.countDocuments({ sellerId: userId, expiresAt: { $gt: now } });
+  if (activeCount >= 10) {
+    return reply('You may only have up to 10 active marketplace listings. Cancel an existing listing before creating a new one.');
+  }
+
   // Remove the card from the user's collection (escrow the card for the listing)
   const ownedIndex = user.ownedCards.findIndex(e => e.cardId === cardDef.id);
   let removedEntry = ownedEntry;
@@ -127,7 +134,11 @@ async function execute({ message, interaction, args }) {
     }
   } catch (err) {}
 
-  const starStr = (removedEntry.starLevel || 0) > 0 ? ` ${'⭐'.repeat(removedEntry.starLevel)}` : '';
+  let starStr = '';
+  const maxStarForRank = getMaxStarForRank(cardDef.rank || 'D');
+  if ((removedEntry.starLevel || 0) >= maxStarForRank) {
+    starStr = ' <:MAXstarlevel:1505618736516825180>';
+  }
   return reply(
     `Listed **${cardDef.emoji ? cardDef.emoji + ' ' : ''}${cardDef.character}**${starStr} (Lvl. ${removedEntry.level || 1}) for **${formatPrice(price)}** ${BELI_EMOJI}!\nListing expires in 2 weeks. Use \`op marketlistings\` to view your market listings.`
   );

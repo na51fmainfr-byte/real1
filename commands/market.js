@@ -106,8 +106,6 @@ function buildMarketEmbed(listings, session, total) {
       const maxStar = getMaxStarForRank(listing.cardRank || 'D');
       if (listing.starLevel >= maxStar) {
         starStr = ' <:MAXstarlevel:1505618736516825180>';
-      } else {
-        starStr = ` (${listing.starLevel} star${listing.starLevel !== 1 ? 's' : ''})`;
       }
     }
     const priceStr = formatPrice(listing.price);
@@ -177,7 +175,6 @@ function buildMarketComponents(listings, session, total, userId) {
     if (typeof listing.starLevel === 'number' && listing.starLevel > 0) {
       const maxStar = getMaxStarForRank(listing.cardRank || 'D');
       if (listing.starLevel >= maxStar) starStr = ' <:MAXstarlevel:1505618736516825180>';
-      else starStr = ` (${listing.starLevel}★)`;
     }
     const label = `${listing.cardName}${starStr} (Lvl. ${listing.level}) — ${priceStr} beli`.slice(0, 100);
     const desc = `ID: ${formatCardId(listing.cardId)} | Seller: ${listing.sellerName}`.slice(0, 100);

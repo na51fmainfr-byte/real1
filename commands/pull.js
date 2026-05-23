@@ -5,6 +5,8 @@ const { buildPullEmbed, getAllCardVersions, getCardById, pickFromPoolWithWishlis
 const stockUtils = require('../src/stock');
 const getPreviousPullResetDate = stockUtils.getPreviousPullResetDate;
 const getTimeUntilNextPullReset = stockUtils.getTimeUntilNextPullReset;
+const { AttachmentBuilder } = require('discord.js');
+const { generateArtifactImage } = require('../utils/artifactImage');
 
 module.exports = {
   name: 'pull',
@@ -232,7 +234,19 @@ module.exports = {
       console.error('Error checking achievements after pull', err);
     }
 
-    if (message) return message.channel.send({ embeds: [embed] });
-    return interaction.reply({ embeds: [embed] });
+    // Attach generated artifact image when the pulled card is an artifact
+    let files;
+    if (card && card.artifact) {
+      try {
+        const buf = await generateArtifactImage(card);
+        const att = new AttachmentBuilder(buf, { name: `artifact-${card.id}.png` });
+        files = [att];
+      } catch (e) {
+        console.error('Failed to generate artifact image for pull', e);
+      }
+    }
+
+    if (message) return message.channel.send({ embeds: [embed], files });
+    return interaction.reply({ embeds: [embed], files });
   }
 };

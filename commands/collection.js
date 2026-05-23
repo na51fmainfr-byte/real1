@@ -1,6 +1,7 @@
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, StringSelectMenuBuilder } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, StringSelectMenuBuilder, AttachmentBuilder } = require('discord.js');
 const User = require('../models/User');
 const { getCardById, buildCardEmbed, getCardFinalStats } = require('../utils/cards');
+const { generateArtifactImage } = require('../utils/artifactImage');
 
 const RANK_ORDER = { D: 1, C: 2, B: 3, A: 4, S: 5, SS: 6, UR: 7 };
 
@@ -248,8 +249,19 @@ async function renderCard(interaction, session, index) {
   const rowSort = makeSortButton(interaction.user.id);
   const components = [rowNav, rowSort];
 
-  if (global && typeof global.safeUpdate === 'function') return global.safeUpdate(interaction, { embeds: [embed], components });
-  return global.safeUpdate(interaction, { embeds: [embed], components });
+  // Attach generated artifact image when necessary
+  let files;
+  if (item.card && item.card.artifact && !item.card.image_url) {
+    try {
+      const buf = await generateArtifactImage(item.card);
+      files = [new AttachmentBuilder(buf, { name: `artifact-${item.card.id}.png` })];
+    } catch (e) {
+      console.error('Failed to generate artifact image for collection render', e);
+    }
+  }
+
+  if (global && typeof global.safeUpdate === 'function') return global.safeUpdate(interaction, { embeds: [embed], components, files });
+  return global.safeUpdate(interaction, { embeds: [embed], components, files });
 }
 
 module.exports = {
@@ -281,11 +293,22 @@ module.exports = {
     const rowSort = makeSortButton(userId);
     const components = [rowNav, rowSort];
 
-    if (message) {
-      return message.channel.send({ embeds: [embed], components });
+    // Attach generated artifact image when necessary
+    let files;
+    if (sorted[0].card && sorted[0].card.artifact && !sorted[0].card.image_url) {
+      try {
+        const buf = await generateArtifactImage(sorted[0].card);
+        files = [new AttachmentBuilder(buf, { name: `artifact-${sorted[0].card.id}.png` })];
+      } catch (e) {
+        console.error('Failed to generate artifact image for collection execute', e);
+      }
     }
 
-    return interaction.reply({ embeds: [embed], components });
+    if (message) {
+      return message.channel.send({ embeds: [embed], components, files });
+    }
+
+    return interaction.reply({ embeds: [embed], components, files });
   },
 
   async handleButton(interaction, customId) {

@@ -232,27 +232,53 @@ function getAttributeEmoji(attribute) {
   return map[attribute] || attribute || '❔';
 }
 
-function buildDurabilityBar(current, max) {
+function buildDurabilityBar(current, max, type = 'default') {
   if (max <= 0) return '';
+  // empty bar (no durability)
   if (current <= 0) {
     return '<:Healthemptyleft:1481750325151928391>'
       + '<:Healthemptymiddle:1481750341489004596>'.repeat(6)
       + '<:healthemptyright:1481750363286667334>';
   }
+
   const healthPercent = Math.max(0, Math.min(1, current / max));
   const totalSections = 8;
   const filledSections = Math.floor(healthPercent * totalSections);
   const emptySections = totalSections - filledSections;
+
+  // default (ship/cola) filled icons
+  const defaultFilled = {
+    left: '<:1000048130:1497622896330408099>',
+    middle: '<:1000048131:1497622898603458570>',
+    right: '<:1000048132:1497622899790713052>'
+  };
+
+  // rod-specific filled icons (requested)
+  const rodFilled = {
+    left: '<:durabilltyleftfull:1491513785570033734>',
+    middle: '<:durabilitymiddlefulll:1491513816654155838>',
+    right: '<:durabilityrightfull:1491513801089093923>'
+  };
+
+  const filled = (type === 'rod') ? rodFilled : defaultFilled;
+
+  const empty = {
+    left: '<:Healthemptyleft:1481750325151928391>',
+    middle: '<:Healthemptymiddle:1481750341489004596>',
+    right: '<:healthemptyright:1481750363286667334>'
+  };
+
   const icons = [
-    emptySections > 0 ? '<:Healthemptyleft:1481750325151928391>' : '<:1000048130:1497622896330408099>',
-    emptySections > 1 ? '<:Healthemptymiddle:1481750341489004596>' : '<:1000048131:1497622898603458570>',
-    emptySections > 2 ? '<:Healthemptymiddle:1481750341489004596>' : '<:1000048131:1497622898603458570>',
-    emptySections > 3 ? '<:Healthemptymiddle:1481750341489004596>' : '<:1000048131:1497622898603458570>',
-    emptySections > 4 ? '<:Healthemptymiddle:1481750341489004596>' : '<:1000048131:1497622898603458570>',
-    emptySections > 5 ? '<:Healthemptymiddle:1481750341489004596>' : '<:1000048131:1497622898603458570>',
-    emptySections > 6 ? '<:Healthemptymiddle:1481750341489004596>' : '<:1000048131:1497622898603458570>',
-    emptySections > 7 ? '<:healthemptyright:1481750363286667334>' : '<:1000048132:1497622899790713052>'
+    emptySections > 0 ? empty.left : filled.left,
+    emptySections > 1 ? empty.middle : filled.middle,
+    emptySections > 2 ? empty.middle : filled.middle,
+    emptySections > 3 ? empty.middle : filled.middle,
+    emptySections > 4 ? empty.middle : filled.middle,
+    emptySections > 5 ? empty.middle : filled.middle,
+    emptySections > 6 ? empty.middle : filled.middle,
+    emptySections > 7 ? empty.right : filled.right
   ];
+
   return icons.join('');
 }
 
@@ -596,7 +622,8 @@ function buildPullEmbed(card, username, avatarUrl, pityText, duplicateInfo, user
   const showStar = forcedStar || isFavPull || isWishPull;
   
   // Artifact cards use a simplified pull embed with boost/signature info
-  let embed = new EmbedBuilder().setColor(color).setTitle(`${showStar ? STAR_EMOJI + ' ' : ''}${card.character}`).setImage(card.image_url || null)
+  // Artifacts always use the generated attachment image for consistency
+  let embed = new EmbedBuilder().setColor(color).setTitle(`${showStar ? STAR_EMOJI + ' ' : ''}${card.character}`).setImage(card.artifact ? `attachment://artifact-${card.id}.png` : (card.image_url || null))
     .setFooter({ text: `ID ${formatCardId(card.id)}${pityText ? ` | ${pityText}` : ''}${duplicateInfo ? ` | ${duplicateInfo}` : ''}`, iconURL: avatarUrl || null });
 
   if (isShipCard(card)) {
@@ -796,7 +823,7 @@ function buildCardEmbed(cardDef, userEntry, avatarUrl, user) {
     const currCola = shipState && typeof shipState.cola === 'number' ? shipState.cola : (cardDef.cola !== undefined ? cardDef.cola : null);
     const maxCola = (cardDef.maxCola !== undefined) ? cardDef.maxCola : (shipState && typeof shipState.maxCola === 'number' ? shipState.maxCola : null);
     if (currCola !== null && maxCola !== null) {
-      const colaBar = buildDurabilityBar(currCola, maxCola);
+      const colaBar = buildDurabilityBar(currCola, maxCola, 'ship');
       shipEmbed.addFields({ name: 'Cola', value: `${colaBar} (${currCola}/${maxCola})`, inline: false });
     }
 
@@ -892,7 +919,8 @@ function buildCardEmbed(cardDef, userEntry, avatarUrl, user) {
       .setColor(color)
       .setTitle(artifactTitle)
       .setDescription(descLines.join('\n'))
-      .setImage(cardDef.image_url || null)
+      // Artifacts use a generated attachment image for consistent visuals.
+      .setImage(`attachment://artifact-${cardDef.id}.png`)
       .setFooter({ text: `ID ${formatCardId(cardDef.id) || 'unknown'}`, iconURL: avatarUrl || null });
 
     if (cardDef.title !== 'Random enemy') {

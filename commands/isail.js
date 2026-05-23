@@ -247,6 +247,22 @@ function hpBar(current, max) {
   return bar;
 }
 
+// Returns a copy of a card's definition with all status-effect fields stripped
+// out when the user's star level has not yet unlocked status effects (< 5).
+// This is the single source of truth — downstream code (getEffectString,
+// applyCardEffectShared, battle log messages) automatically sees no effect.
+function buildBattleDef(def, entry) {
+  const { isStatusEffectUnlocked } = require('../utils/starLevel');
+  if (isStatusEffectUnlocked((entry && entry.starLevel) || 0)) return def;
+  return Object.assign({}, def, {
+    effect: undefined,
+    effectDuration: undefined,
+    effectAmount: undefined,
+    effectChance: undefined,
+    effectTarget: undefined
+  });
+}
+
 function getEffectString(card, target) {
   if (!card.def.effect) return '';
   if (card.def.effect === 'team_stun') {
@@ -1309,20 +1325,21 @@ async function startBattleWithMarines({ message, interaction, user, discordUser,
 
   const resolvedTeam = teamDefs.map(def => {
     const entry = (user.ownedCards || []).find(e => e.cardId === def.id) || { cardId: def.id, level: 1, xp: 0 };
+    const battleDef = buildBattleDef(def, entry);
     const scaled = resolveStats(entry, user.ownedCards || []);
     return {
-      def,
+      def: battleDef,
       userEntry: entry,
       scaled: scaled || {
-        health: def.health,
-        power: def.power,
-        speed: def.speed,
-        attack_min: def.attack_min,
-        attack_max: def.attack_max,
-        special_attack: def.special_attack ? { min: def.special_attack.min_atk || def.special_attack.min, max: def.special_attack.max_atk || def.special_attack.max } : undefined
+        health: battleDef.health,
+        power: battleDef.power,
+        speed: battleDef.speed,
+        attack_min: battleDef.attack_min,
+        attack_max: battleDef.attack_max,
+        special_attack: battleDef.special_attack ? { min: battleDef.special_attack.min_atk || battleDef.special_attack.min, max: battleDef.special_attack.max_atk || battleDef.special_attack.max } : undefined
       },
-      currentHP: (scaled && scaled.health) || def.health,
-      maxHP: (scaled && scaled.health) || def.health,
+      currentHP: (scaled && scaled.health) || battleDef.health,
+      maxHP: (scaled && scaled.health) || battleDef.health,
       energy: 3,
       alive: true,
       turnsUntilRecharge: 0,
@@ -1481,20 +1498,21 @@ module.exports = {
     // user's ownedCards to count Boost cards and returns the final stats.
     const resolvedTeam = teamDefs.map(def => {
       const entry = (user.ownedCards || []).find(e => e.cardId === def.id) || { cardId: def.id, level: 1, xp: 0 };
+      const battleDef = buildBattleDef(def, entry);
       const scaled = resolveStats(entry, user.ownedCards || []);
       return {
-        def,
+        def: battleDef,
         userEntry: entry,
         scaled: scaled || {
-          health: def.health,
-          power: def.power,
-          speed: def.speed,
-          attack_min: def.attack_min,
-          attack_max: def.attack_max,
-          special_attack: def.special_attack ? { min: def.special_attack.min_atk || def.special_attack.min, max: def.special_attack.max_atk || def.special_attack.max } : undefined
+          health: battleDef.health,
+          power: battleDef.power,
+          speed: battleDef.speed,
+          attack_min: battleDef.attack_min,
+          attack_max: battleDef.attack_max,
+          special_attack: battleDef.special_attack ? { min: battleDef.special_attack.min_atk || battleDef.special_attack.min, max: battleDef.special_attack.max_atk || battleDef.special_attack.max } : undefined
         },
-        currentHP: (scaled && scaled.health) || def.health,
-        maxHP: (scaled && scaled.health) || def.health,
+        currentHP: (scaled && scaled.health) || battleDef.health,
+        maxHP: (scaled && scaled.health) || battleDef.health,
         energy: 3,
         alive: true,
         turnsUntilRecharge: 0,
@@ -1731,20 +1749,21 @@ module.exports = {
 
           const resolvedTeam = teamDefs.map(def => {
             const entry = (user.ownedCards || []).find(e => e.cardId === def.id) || { cardId: def.id, level: 1, xp: 0 };
+            const battleDef = buildBattleDef(def, entry);
             const scaled = resolveStats(entry, user.ownedCards || []);
             return {
-              def,
+              def: battleDef,
               userEntry: entry,
               scaled: scaled || {
-                health: def.health,
-                power: def.power,
-                speed: def.speed,
-                attack_min: def.attack_min,
-                attack_max: def.attack_max,
-                special_attack: def.special_attack ? { min: def.special_attack.min_atk || def.special_attack.min, max: def.special_attack.max_atk || def.special_attack.max } : undefined
+                health: battleDef.health,
+                power: battleDef.power,
+                speed: battleDef.speed,
+                attack_min: battleDef.attack_min,
+                attack_max: battleDef.attack_max,
+                special_attack: battleDef.special_attack ? { min: battleDef.special_attack.min_atk || battleDef.special_attack.min, max: battleDef.special_attack.max_atk || battleDef.special_attack.max } : undefined
               },
-              currentHP: (scaled && scaled.health) || def.health,
-              maxHP: (scaled && scaled.health) || def.health,
+              currentHP: (scaled && scaled.health) || battleDef.health,
+              maxHP: (scaled && scaled.health) || battleDef.health,
               energy: 3,
               alive: true,
               turnsUntilRecharge: 0,

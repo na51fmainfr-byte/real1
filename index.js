@@ -226,12 +226,18 @@ async function main() {
         if (action === 'market_search_modal') {
           return marketCmd.handleModal(interaction);
         }
+        if (action === 'guildlist_goto_modal') {
+          return require('./commands/owner').handleModal(interaction);
+        }
       }
 
       if (interaction.isStringSelectMenu()) {
         const [action] = interaction.customId.split(':');
         if (action === 'collection_sort_select') {
           return require('./commands/collection').handleButton(interaction, interaction.customId);
+        }
+        if (action === 'guildlist_filter') {
+          return require('./commands/owner').handleSelect(interaction);
         }
         if (action === 'help_category') {
           return require('./commands/help').handleCategorySelect(interaction);
@@ -445,7 +451,7 @@ async function main() {
         }
 
         // handle owner buttons (reset-all confirmation, guildlist pagination)
-        if (action && (action.startsWith('owner_reset_all') || action.startsWith('owner_resetisail') || action.startsWith('guildlist_prev') || action.startsWith('guildlist_next'))) {
+        if (action && (action.startsWith('owner_reset_all') || action.startsWith('owner_resetisail') || action.startsWith('guildlist_prev') || action.startsWith('guildlist_next') || action.startsWith('guildlist_goto'))) {
           return require('./commands/owner').handleButton(interaction, interaction.customId);
         }
 

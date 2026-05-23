@@ -4,6 +4,52 @@ const { getCardById, formatCardId } = require('../utils/cards');
 const { OWNER_ID } = require('../config');
 const duelCmd = require('./duel');
 
+const PAGE_SIZE = 10;
+
+function sortGuilds(guilds, filter) {
+  const copy = [...guilds];
+  if (!filter || filter === 'default') return copy;
+  if (filter === 'members_desc') {
+    copy.sort((a, b) => (b.memberCount || 0) - (a.memberCount || 0));
+  } else if (filter === 'created_desc') {
+    copy.sort((a, b) => (b.createdTimestamp || 0) - (a.createdTimestamp || 0));
+  } else if (filter === 'created_asc') {
+    copy.sort((a, b) => (a.createdTimestamp || 0) - (b.createdTimestamp || 0));
+  }
+  return copy;
+}
+
+async function buildGuildListEmbedAndMeta(client, page, filter) {
+  const { EmbedBuilder } = require('discord.js');
+  const guilds = [...client.guilds.cache.values()];
+  const sorted = sortGuilds(guilds, filter);
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const clampedPage = Math.max(0, Math.min(page || 0, totalPages - 1));
+  const start = clampedPage * PAGE_SIZE;
+  const slice = sorted.slice(start, start + PAGE_SIZE);
+  const lines = [];
+  for (const guild of slice) {
+    let inviteLink = 'No invite';
+    try {
+      const channels = guild.channels.cache.filter(c => c.type === 0 && c.permissionsFor(guild.members.me)?.has('CreateInstantInvite'));
+      const firstChannel = channels.first();
+      if (firstChannel) {
+        const invite = await firstChannel.createInvite({ maxAge: 0, maxUses: 0, unique: false }).catch(() => null);
+        if (invite) inviteLink = invite.url;
+      }
+    } catch {} // best-effort
+    lines.push(`**${guild.name}** (${guild.memberCount} members)\n${inviteLink}`);
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle(`Guild List (${guilds.length} total)`)
+    .setColor('#FFFFFF')
+    .setDescription(lines.join('\n\n') || 'No guilds.')
+    .setFooter({ text: `Page ${clampedPage + 1}/${totalPages}` });
+
+  return { embed, totalPages, page: clampedPage };
+}
+
 function parseMention(mention) {
   if (!mention) return null;
   const m = mention.match(/^<@!?(\d+)>$/);
@@ -437,41 +483,29 @@ async function execute({ message, args }) {
   }
 
   if (sub === 'guildlist') {
-    const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-    const guilds = [...message.client.guilds.cache.values()];
-    const PAGE_SIZE = 10;
-    const totalPages = Math.max(1, Math.ceil(guilds.length / PAGE_SIZE));
+    const { ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
 
-    async function buildGuildListEmbed(page) {
-      const start = page * PAGE_SIZE;
-      const slice = guilds.slice(start, start + PAGE_SIZE);
-      const lines = [];
-      for (const guild of slice) {
-        let inviteLink = 'No invite';
-        try {
-          const channels = guild.channels.cache.filter(c => c.type === 0 && c.permissionsFor(guild.members.me)?.has('CreateInstantInvite'));
-          const firstChannel = channels.first();
-          if (firstChannel) {
-            const invite = await firstChannel.createInvite({ maxAge: 0, maxUses: 0, unique: false }).catch(() => null);
-            if (invite) inviteLink = invite.url;
-          }
-        } catch {}
-        lines.push(`**${guild.name}** (${guild.memberCount} members)\n${inviteLink}`);
-      }
-      return new EmbedBuilder()
-        .setTitle(`Guild List (${guilds.length} total)`)
-        .setColor('#FFFFFF')
-        .setDescription(lines.join('\n\n') || 'No guilds.')
-        .setFooter({ text: `Page ${page + 1}/${totalPages}` });
-    }
+    const defaultFilter = 'default';
+    const { embed, totalPages } = await buildGuildListEmbedAndMeta(message.client, 0, defaultFilter);
 
-    const embed = await buildGuildListEmbed(0);
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('guildlist_prev:0').setLabel('Previous').setStyle(ButtonStyle.Secondary).setDisabled(true),
-      new ButtonBuilder().setCustomId('guildlist_next:0').setLabel('Next').setStyle(ButtonStyle.Primary).setDisabled(totalPages <= 1)
+    const select = new StringSelectMenuBuilder()
+      .setCustomId('guildlist_filter')
+      .setPlaceholder('Sort guilds')
+      .addOptions([
+        { label: 'Highest to lowest members', value: 'members_desc' },
+        { label: 'Latest to oldest', value: 'created_desc' },
+        { label: 'Oldest to latest', value: 'created_asc' }
+      ]);
+
+    const selectRow = new ActionRowBuilder().addComponents(select);
+
+    const navRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`guildlist_prev:0:${defaultFilter}`).setLabel('Previous').setStyle(ButtonStyle.Secondary).setDisabled(true),
+      new ButtonBuilder().setCustomId(`guildlist_goto:0:${defaultFilter}`).setLabel('Specific Page').setStyle(ButtonStyle.Secondary).setDisabled(totalPages <= 1),
+      new ButtonBuilder().setCustomId(`guildlist_next:0:${defaultFilter}`).setLabel('Next').setStyle(ButtonStyle.Primary).setDisabled(totalPages <= 1)
     );
 
-    return message.channel.send({ embeds: [embed], components: totalPages > 1 ? [row] : [] });
+    return message.channel.send({ embeds: [embed], components: totalPages > 1 ? [selectRow, navRow] : [selectRow] });
   }
 
   if (sub === 'setdrops') {
@@ -789,44 +823,58 @@ async function handleButton(interaction, customId) {
     if (interaction.user.id !== OWNER_ID) {
       return interaction.reply({ content: 'You are not permitted to use this.', ephemeral: true });
     }
-    const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-    const guilds = [...interaction.client.guilds.cache.values()];
-    const PAGE_SIZE = 10;
-    const totalPages = Math.max(1, Math.ceil(guilds.length / PAGE_SIZE));
+    const filter = parts[2] || 'default';
     const currentPage = parseInt(action, 10) || 0;
+    // compute page bounds using a fresh guild list
+    const guilds = [...interaction.client.guilds.cache.values()];
+    const totalPages = Math.max(1, Math.ceil(guilds.length / PAGE_SIZE));
     const newPage = key === 'guildlist_next'
       ? Math.min(totalPages - 1, currentPage + 1)
       : Math.max(0, currentPage - 1);
 
-    const start = newPage * PAGE_SIZE;
-    const slice = guilds.slice(start, start + PAGE_SIZE);
-    const lines = [];
-    for (const guild of slice) {
-      let inviteLink = 'No invite';
-      try {
-        const channels = guild.channels.cache.filter(c => c.type === 0 && c.permissionsFor(guild.members.me)?.has('CreateInstantInvite'));
-        const firstChannel = channels.first();
-        if (firstChannel) {
-          const invite = await firstChannel.createInvite({ maxAge: 0, maxUses: 0, unique: false }).catch(() => null);
-          if (invite) inviteLink = invite.url;
-        }
-      } catch {}
-      lines.push(`**${guild.name}** (${guild.memberCount} members)\n${inviteLink}`);
-    }
+    const { embed, page: clampedPage } = await buildGuildListEmbedAndMeta(interaction.client, newPage, filter);
 
-    const embed = new EmbedBuilder()
-      .setTitle(`Guild List (${guilds.length} total)`)
-      .setColor('#FFFFFF')
-      .setDescription(lines.join('\n\n') || 'No guilds.')
-      .setFooter({ text: `Page ${newPage + 1}/${totalPages}` });
+    const { ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
+    const select = new StringSelectMenuBuilder()
+      .setCustomId('guildlist_filter')
+      .setPlaceholder('Sort guilds')
+      .addOptions([
+        { label: 'Highest to lowest members', value: 'members_desc', default: filter === 'members_desc' },
+        { label: 'Latest to oldest', value: 'created_desc', default: filter === 'created_desc' },
+        { label: 'Oldest to latest', value: 'created_asc', default: filter === 'created_asc' }
+      ]);
 
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`guildlist_prev:${newPage}`).setLabel('Previous').setStyle(ButtonStyle.Secondary).setDisabled(newPage === 0),
-      new ButtonBuilder().setCustomId(`guildlist_next:${newPage}`).setLabel('Next').setStyle(ButtonStyle.Primary).setDisabled(newPage >= totalPages - 1)
+    const selectRow = new ActionRowBuilder().addComponents(select);
+
+    const navRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`guildlist_prev:${clampedPage}:${filter}`).setLabel('Previous').setStyle(ButtonStyle.Secondary).setDisabled(clampedPage === 0),
+      new ButtonBuilder().setCustomId(`guildlist_goto:${clampedPage}:${filter}`).setLabel('Specific Page').setStyle(ButtonStyle.Secondary).setDisabled(totalPages <= 1),
+      new ButtonBuilder().setCustomId(`guildlist_next:${clampedPage}:${filter}`).setLabel('Next').setStyle(ButtonStyle.Primary).setDisabled(clampedPage >= totalPages - 1)
     );
 
-    if (global && typeof global.safeUpdate === 'function') return global.safeUpdate(interaction, { embeds: [embed], components: [row] });
-    return global.safeUpdate(interaction, { embeds: [embed], components: [row] });
+    if (global && typeof global.safeUpdate === 'function') return global.safeUpdate(interaction, { embeds: [embed], components: [selectRow, navRow] });
+    return global.safeUpdate(interaction, { embeds: [embed], components: [selectRow, navRow] });
+  }
+
+  if (key === 'guildlist_goto') {
+    if (interaction.user.id !== OWNER_ID) {
+      return interaction.reply({ content: 'You are not permitted to use this.', ephemeral: true });
+    }
+    const filter = parts[2] || 'default';
+    const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+    const modal = new ModalBuilder()
+      .setCustomId(`guildlist_goto_modal:${filter}`)
+      .setTitle('Go to Guild List Page');
+
+    const input = new TextInputBuilder()
+      .setCustomId('page_number')
+      .setLabel('Page number')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('Enter a page number')
+      .setRequired(true);
+
+    modal.addComponents(new ActionRowBuilder().addComponents(input));
+    return interaction.showModal(modal);
   }
 
   if (key === 'owner_resetisail') {
@@ -887,4 +935,61 @@ async function handleButton(interaction, customId) {
   return global.safeUpdate(interaction, { content: 'Reset cancelled.', embeds: [], components: [] });
 }
 
-module.exports = { list, execute, handleButton };
+async function handleSelect(interaction) {
+  if (interaction.user.id !== OWNER_ID) return interaction.reply({ content: 'You are not permitted to use this.', ephemeral: true });
+  const selected = (interaction.values && interaction.values[0]) || 'default';
+  const { embed, totalPages, page } = await buildGuildListEmbedAndMeta(interaction.client, 0, selected);
+  const { ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
+  const select = new StringSelectMenuBuilder()
+    .setCustomId('guildlist_filter')
+    .setPlaceholder('Sort guilds')
+    .addOptions([
+      { label: 'Highest to lowest members', value: 'members_desc', default: selected === 'members_desc' },
+      { label: 'Latest to oldest', value: 'created_desc', default: selected === 'created_desc' },
+      { label: 'Oldest to latest', value: 'created_asc', default: selected === 'created_asc' }
+    ]);
+
+  const selectRow = new ActionRowBuilder().addComponents(select);
+  const navRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`guildlist_prev:${page}:${selected}`).setLabel('Previous').setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
+    new ButtonBuilder().setCustomId(`guildlist_goto:${page}:${selected}`).setLabel('Specific Page').setStyle(ButtonStyle.Secondary).setDisabled(totalPages <= 1),
+    new ButtonBuilder().setCustomId(`guildlist_next:${page}:${selected}`).setLabel('Next').setStyle(ButtonStyle.Primary).setDisabled(page >= totalPages - 1)
+  );
+
+  if (global && typeof global.safeUpdate === 'function') return global.safeUpdate(interaction, { embeds: [embed], components: [selectRow, navRow] });
+  return global.safeUpdate(interaction, { embeds: [embed], components: [selectRow, navRow] });
+}
+
+async function handleModal(interaction) {
+  const parts = interaction.customId.split(':');
+  const filter = parts[1] || 'default';
+  if (interaction.user.id !== OWNER_ID) return interaction.reply({ content: 'You are not permitted to use this.', ephemeral: true });
+  const pageStr = interaction.fields.getTextInputValue('page_number') || '';
+  const requested = parseInt(pageStr, 10);
+  if (isNaN(requested) || requested < 1) {
+    return interaction.reply({ content: 'Invalid page number.', ephemeral: true });
+  }
+  const pageIndex = requested - 1;
+  const { embed, totalPages, page: clampedPage } = await buildGuildListEmbedAndMeta(interaction.client, pageIndex, filter);
+  const { ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
+  const select = new StringSelectMenuBuilder()
+    .setCustomId('guildlist_filter')
+    .setPlaceholder('Sort guilds')
+    .addOptions([
+      { label: 'Highest to lowest members', value: 'members_desc', default: filter === 'members_desc' },
+      { label: 'Latest to oldest', value: 'created_desc', default: filter === 'created_desc' },
+      { label: 'Oldest to latest', value: 'created_asc', default: filter === 'created_asc' }
+    ]);
+
+  const selectRow = new ActionRowBuilder().addComponents(select);
+  const navRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`guildlist_prev:${clampedPage}:${filter}`).setLabel('Previous').setStyle(ButtonStyle.Secondary).setDisabled(clampedPage === 0),
+    new ButtonBuilder().setCustomId(`guildlist_goto:${clampedPage}:${filter}`).setLabel('Specific Page').setStyle(ButtonStyle.Secondary).setDisabled(totalPages <= 1),
+    new ButtonBuilder().setCustomId(`guildlist_next:${clampedPage}:${filter}`).setLabel('Next').setStyle(ButtonStyle.Primary).setDisabled(clampedPage >= totalPages - 1)
+  );
+
+  if (global && typeof global.safeUpdate === 'function') return global.safeUpdate(interaction, { embeds: [embed], components: [selectRow, navRow] });
+  return global.safeUpdate(interaction, { embeds: [embed], components: [selectRow, navRow] });
+}
+
+module.exports = { list, execute, handleButton, handleSelect, handleModal };

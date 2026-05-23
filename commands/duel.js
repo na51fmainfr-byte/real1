@@ -672,8 +672,12 @@ async function finalizeAction(state, msg, timedOut = false, appliedCut = false) 
       .setDescription(description)
       .setAuthor({ name: state.discordUser1.username, iconURL: state.discordUser1.displayAvatarURL() });
     
-    try { await msg.delete(); } catch {}
-    await msg.channel.send({ embeds: [victorEmbed] });
+    clearDuelTimeout(state);
+    try {
+      await msg.edit({ embeds: [victorEmbed], components: [] });
+    } catch (e) {
+      try { await msg.channel.send({ embeds: [victorEmbed] }); } catch {}
+    }
     duelStates.delete(msg.id);
   } else {
     // Recharge and switch turn
@@ -697,8 +701,10 @@ async function finalizeAction(state, msg, timedOut = false, appliedCut = false) 
       return finalizeAction(state, msg, false, true);
     }
 
-    // refresh message instead of editing
-    msg = await refreshDuelMessage(msg, state);
+    // Edit the existing message in place so the interaction's original message
+    // is never deleted mid-duel (deletion causes "This interaction failed" on
+    // the deferred component interaction even though the defer was acknowledged).
+    await updateDuelMessage(msg, state);
     // clear log now that we have shown it on the latest embed
     state.log = '';
 
@@ -832,8 +838,12 @@ async function finalizeAction(state, msg, timedOut = false, appliedCut = false) 
         .setDescription(description)
         .setAuthor({ name: state.discordUser1.username, iconURL: state.discordUser1.displayAvatarURL() });
 
-      try { await msg.delete(); } catch {}
-      await msg.channel.send({ embeds: [victorEmbed] });
+      clearDuelTimeout(state);
+      try {
+        await msg.edit({ embeds: [victorEmbed], components: [] });
+      } catch (e) {
+        try { await msg.channel.send({ embeds: [victorEmbed] }); } catch {}
+      }
       duelStates.delete(msg.id);
     }
   }
@@ -1199,17 +1209,6 @@ module.exports = {
       return interaction.reply({ content: 'This duel session has expired.', ephemeral: true });
     }
 
-    // Clear any active special attack GIF when a player interacts
-    if (state.gifMessageId) {
-      try {
-        const gifMsg = await interaction.channel.messages.fetch(state.gifMessageId);
-        await gifMsg.delete();
-      } catch (e) {
-        // Message might already be deleted
-      }
-      state.gifMessageId = null;
-    }
-
     const isPlayer1 = interaction.user.id === state.player1Id;
     const isPlayer2 = interaction.user.id === state.player2Id;
 
@@ -1222,9 +1221,20 @@ module.exports = {
       return interaction.reply({ content: 'It is not your turn.', ephemeral: true });
     }
 
-    // Defer immediately after quick validation to avoid "This interaction failed"
-    // (Discord requires a response within 3 seconds; DB lookups below can exceed that)
+    // Defer FIRST — before any async work — so Discord's 3-second clock is stopped
+    // immediately after the quick synchronous checks above pass.
     await safeDefer(interaction);
+
+    // Clear any active special attack GIF (done after defer so its latency doesn't count)
+    if (state.gifMessageId) {
+      try {
+        const gifMsg = await interaction.channel.messages.fetch(state.gifMessageId);
+        await gifMsg.delete();
+      } catch (e) {
+        // Message might already be deleted
+      }
+      state.gifMessageId = null;
+    }
 
     const myTeam = isPlayer1 ? state.player1Cards : state.player2Cards;
     const opponentTeam = isPlayer1 ? state.player2Cards : state.player1Cards;

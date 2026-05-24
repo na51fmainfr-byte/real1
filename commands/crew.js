@@ -73,7 +73,7 @@ async function buildCrewEmbed(crew, client) {
   const captainName = names[crew.captainId] || crew.captainId;
   const crewMembers = crew.members.filter(id => id !== crew.captainId);
 
-  let desc = `**⚓ Captain**\n┗ ${captainName}`;
+  let desc = `**<:captain:1508200434274406470> Captain**\n┗ ${captainName}`;
   if (crewMembers.length > 0) {
     const memberLines = crewMembers.map(id => `┣ ${names[id] || id}`);
     desc += `\n\n**Members**\n${memberLines.join('\n')}`;
@@ -86,13 +86,13 @@ async function buildCrewEmbed(crew, client) {
   } catch {}
 
   const embed = new EmbedBuilder()
-    .setTitle(`🏴‍☠️  ${crew.name}`)
+    .setTitle(`${crew.name}`)
     .setColor(crew.color || '#2b2d31')
     .setDescription(desc)
     .addFields(
-      { name: '👥 Members', value: `${crew.members.length} / ${CREW_CAP}`, inline: true },
-      { name: '💰 Total Bounty', value: totalBounty.toLocaleString(), inline: true },
-      { name: '⚔️ Total Power', value: totalPower.toLocaleString(), inline: true }
+      { name: '<:3_:1503002985578365118> Members', value: `${crew.members.length} / ${CREW_CAP}`, inline: true },
+      { name: '<:beri:1490738445319016651> Total Bounty', value: totalBounty.toLocaleString(), inline: true },
+      { name: '<:sword:1490732251107819530> Total Power', value: totalPower.toLocaleString(), inline: true }
     );
 
   if (captainAvatar) embed.setThumbnail(captainAvatar);
@@ -103,7 +103,7 @@ async function buildCrewEmbed(crew, client) {
 function buildCreatePrompt() {
   const embed = new EmbedBuilder()
     .setColor('#2b2d31')
-    .setTitle('🏴‍☠️  No Crew')
+    .setTitle('No Crew')
     .setDescription("You're not in a crew yet.\nCreate one to rally your nakama and compete on the crew leaderboard!");
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -180,7 +180,7 @@ module.exports = {
       });
 
       const embed = await buildCrewEmbed(crew, client);
-      return message.reply({ content: '✅ Crew created!', embeds: [embed] });
+      return message.reply({ content: 'Crew created!', embeds: [embed] });
     }
 
     // ── COLOR ─────────────────────────────────────────────────────────────────
@@ -205,8 +205,8 @@ module.exports = {
       crew.color = hex;
       await crew.save();
       const embed = await buildCrewEmbed(crew, client);
-      if (message) return message.reply({ content: `✅ Crew colour updated to \`${hex}\`.`, embeds: [embed] });
-      return interaction.reply({ content: `✅ Crew colour updated to \`${hex}\`.`, embeds: [embed] });
+      if (message) return message.reply({ content: `Crew colour updated to **\`${hex}\`**.`, embeds: [embed] });
+      return interaction.reply({ content: `✅ Crew colour updated to **\`${hex}\`**.`, embeds: [embed] });
     }
 
     // ── JOLLY ROGER ───────────────────────────────────────────────────────────
@@ -231,8 +231,8 @@ module.exports = {
       crew.jollyRoger = url;
       await crew.save();
       const embed = await buildCrewEmbed(crew, client);
-      if (message) return message.reply({ content: '✅ Jolly roger updated.', embeds: [embed] });
-      return interaction.reply({ content: '✅ Jolly roger updated.', embeds: [embed] });
+      if (message) return message.reply({ content: 'Jolly roger updated.', embeds: [embed] });
+      return interaction.reply({ content: 'Jolly roger updated.', embeds: [embed] });
     }
 
     // ── ADD ───────────────────────────────────────────────────────────────────
@@ -277,7 +277,7 @@ module.exports = {
       }
       crew.members.push(targetUser.id);
       await crew.save();
-      const content = `✅ **${targetUser.username}** has been added to **${crew.name}**.`;
+      const content = `**${targetUser.username}** has been added to **${crew.name}**.`;
       if (message) return message.reply(content);
       return interaction.reply({ content });
     }
@@ -312,7 +312,7 @@ module.exports = {
       }
       crew.members = crew.members.filter(id => id !== targetUser.id);
       await crew.save();
-      const content = `✅ **${targetUser.username}** has been removed from **${crew.name}**.`;
+      const content = `**${targetUser.username}** has been removed from **${crew.name}**.`;
       if (message) return message.reply(content);
       return interaction.reply({ content });
     }
@@ -371,7 +371,7 @@ module.exports = {
       const confirmed = (args?.[1] || '').toLowerCase() === 'confirm';
       if (!confirmed) {
         return message.reply(
-          `⚠️ Are you sure you want to disband **${crew.name}**? This cannot be undone.\nType \`op crew disband confirm\` to proceed.`
+          `Are you sure you want to disband **${crew.name}**? This cannot be undone.\nType \`op crew disband confirm\` to proceed.`
         );
       }
       await Crew.deleteOne({ crewId: crew.crewId });
@@ -467,6 +467,6 @@ module.exports = {
     });
 
     const embed = await buildCrewEmbed(crew, client);
-    return interaction.reply({ content: '✅ Crew created!', embeds: [embed] });
+    return interaction.reply({ content: 'Crew created!', embeds: [embed] });
   }
 };

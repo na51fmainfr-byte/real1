@@ -194,6 +194,35 @@ commands.push({
   ]
 });
 
+// crew system
+commands.push({
+  name: 'crew',
+  description: 'Manage your pirate crew',
+  options: [
+    {
+      name: 'view',
+      type: 1,
+      description: 'View your crew or another player\'s crew',
+      options: [{ name: 'user', type: 6, description: 'Player to view (optional)', required: false }]
+    },
+    {
+      name: 'add',
+      type: 1,
+      description: 'Add a member to your crew (captain only)',
+      options: [{ name: 'user', type: 6, description: 'User to add', required: true }]
+    },
+    {
+      name: 'remove',
+      type: 1,
+      description: 'Remove a member from your crew (captain only)',
+      options: [{ name: 'user', type: 6, description: 'User to remove', required: true }]
+    },
+    { name: 'leave',       type: 1, description: 'Leave your current crew' },
+    { name: 'disband',     type: 1, description: 'Disband your crew (captain only)' },
+    { name: 'leaderboard', type: 1, description: 'View top crews by total bounty' }
+  ]
+});
+
 // help command
 commands.push({ name: 'help', description: 'View all available commands organized by category' });
 

@@ -48,6 +48,7 @@ const marketCmd = require('./commands/market');
 const marketListCmd = require('./commands/marketlist');
 const marketListingsCmd = require('./commands/marketlistings');
 const marketBuyCmd = require('./commands/marketbuy');
+const crewCmd = require('./commands/crew');
 const User = require('./models/User');
 const { setBotConfig } = require('./models/BotConfig');
 
@@ -233,6 +234,9 @@ async function main() {
         if (action === 'gamble_roul_lucky') {
           return await gambleCmd.handleRouletteModal(interaction);
         }
+        if (action === 'crew_create_modal') {
+          return await crewCmd.handleModal(interaction);
+        }
       }
 
       if (interaction.isStringSelectMenu()) {
@@ -308,6 +312,7 @@ async function main() {
         if (commandName === 'equip') return equipCmd.execute({ interaction });
         if (commandName === 'unequip') return unequipCmd.execute({ interaction });
         if (commandName === 'help') return require('./commands/help').execute({ interaction });
+        if (commandName === 'crew') return crewCmd.execute({ interaction });
       }
 
       if (interaction.isButton()) {
@@ -502,6 +507,11 @@ async function main() {
         if (action === 'nami_ability') {
           return gambleCmd.handleNamiAbilityButton(interaction, cardId);
         }
+
+        // handle crew buttons
+        if (action && (action === 'crew_create_btn' || action.startsWith('crew_disband'))) {
+          return crewCmd.handleButton(interaction, interaction.customId);
+        }
       }
     } catch (err) {
       console.error(err);
@@ -604,6 +614,7 @@ async function main() {
       if (cmd === 'unfavorite') return await unfavoriteCmd.execute({ message, args });
       if (cmd === 'favorites') return await favoritesCmd.execute({ message });
       if (cmd === 'help' || cmd === 'h') return await require('./commands/help').execute({ message });
+      if (cmd === 'crew') return await crewCmd.execute({ message, args });
       if (cmd === 'ownerlist') return await require('./commands/owner').list({ message });
       if (cmd === 'owner') return await require('./commands/owner').execute({ message, args });
       if (cmd === 'market') return await marketCmd.execute({ message, args });

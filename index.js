@@ -230,6 +230,9 @@ async function main() {
         if (action === 'guildlist_goto_modal') {
           return require('./commands/owner').handleModal(interaction);
         }
+        if (action === 'gamble_roul_lucky') {
+          return gambleCmd.handleRouletteModal(interaction);
+        }
       }
 
       if (interaction.isStringSelectMenu()) {

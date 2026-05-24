@@ -651,6 +651,14 @@ async function execute({ message, args }) {
     }
   }
 
+  if (sub === 'togglegamble') {
+    const { getBotConfig: _getBC, setBotConfig: _setBC } = require('../models/BotConfig');
+    const cur = await _getBC('ownerGambleNoCooldown');
+    const next = !cur;
+    await _setBC('ownerGambleNoCooldown', next);
+    return message.reply(`Owner gamble cooldown bypass is now **${next ? 'ENABLED' : 'DISABLED'}**.`);
+  }
+
   if (sub === 'unsetdrops') {
     const channelMention = args[1];
     if (!channelMention) return message.reply('Usage: op owner unsetdrops <#channel>');

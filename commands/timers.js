@@ -44,10 +44,9 @@ module.exports = {
       `Bounty: ${formatTimeLeft(bountyTime)}`,
       `Daily: ${formatTimeLeft(dailyTime)}`,
       `Rob: ${formatTimeLeft(robTime)}`,
-      `Vote: ${formatTimeLeft(voteTime)}`,
       `Trivia: ${formatTimeLeft(triviaTime)}`,
-      `Loot: ${formatTimeLeft(lootTime)}`,
-      `Gamble Cooldown: ${formatTimeLeft(gambleTime)}`,
+      `Vote: ${formatTimeLeft(voteTime)}`,
+      `Gamble: ${formatTimeLeft(gambleTime)}`,
     ].join('\n');
 
     const embed = new EmbedBuilder()

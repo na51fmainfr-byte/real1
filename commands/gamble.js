@@ -1,15 +1,42 @@
 const {
   ActionRowBuilder, ButtonBuilder, ButtonStyle,
-  EmbedBuilder, StringSelectMenuBuilder, AttachmentBuilder
+  EmbedBuilder, StringSelectMenuBuilder, AttachmentBuilder,
+  ModalBuilder, TextInputBuilder, TextInputStyle
 } = require('discord.js');
 const { createCanvas, loadImage } = require('@napi-rs/canvas');
 const User = require('../models/User');
 const { cards } = require('../data/cards');
 
+const { OWNER_ID } = require('../config');
+const { getBotConfig } = require('../models/BotConfig');
+
 const GAMBLE_COOLDOWN_MS = 60 * 60 * 1000;
 
 // In-memory sessions: userId → session
 const gambleSessions = new Map();
+// crash update intervals (userId -> intervalId)
+const crashIntervals = new Map();
+
+const ATTRIBUTE_COLORS = {
+  INT: '#9966CC',
+  PSY: '#FFD54F',
+  DEX: '#44AA44',
+  STR: '#FF4444',
+  QCK: '#4DABF7'
+};
+
+const GAME_EMOJIS = {
+  coin: '<:Untitleddesign:1507893497103913040>',
+  blackjack: '<:blackjack:1507893867851157597>',
+  roulette: '<:roulette:1507894367149621339>',
+  slots: '<:slots:1507894799770976346>',
+  crash: '<:crash:1507895089568026805>',
+  towers: '<:tower:1507895575708831784>',
+  scratch: '<:scratch:1507895905708281988>'
+};
+
+const HEADS_EMOJI_URL = 'https://cdn.discordapp.com/emojis/1507889461441069157.png';
+const TAILS_EMOJI_URL = 'https://cdn.discordapp.com/emojis/1507889462645100554.png';
 
 // ────────────────────────────────────────────
 // UTILITY
@@ -61,7 +88,7 @@ function rollRank() {
 }
 
 function getSlotPool() {
-  return cards.filter(c => !c.ship && !c.artifact && c.emoji && c.character);
+  return cards.filter(c => !c.ship && !c.artifact && c.emoji && c.character && c.rank && !['D','C'].includes(c.rank));
 }
 
 function rollSlotCard() {
@@ -152,12 +179,13 @@ const RED_NUMBERS = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
 // CANVAS: COIN FLIP
 // ────────────────────────────────────────────
 
-function renderCoinCanvas(pick, result, done) {
+async function renderCoinCanvas(pick, result, done) {
   const w = 600, h = 220;
   const canvas = createCanvas(w, h);
   const ctx = canvas.getContext('2d');
 
-  ctx.fillStyle = '#ffffff';
+  // blend with embed color
+  ctx.fillStyle = '#ffd500';
   ctx.fillRect(0, 0, w, h);
 
   ctx.strokeStyle = '#e0e0e0';
@@ -168,6 +196,10 @@ function renderCoinCanvas(pick, result, done) {
   ctx.stroke();
 
   const won = done && pick === result;
+
+  let headsImg = null, tailsImg = null;
+  try { headsImg = await loadImage(HEADS_EMOJI_URL); } catch (e) {}
+  try { tailsImg = await loadImage(TAILS_EMOJI_URL); } catch (e) {}
 
   const drawSide = (cx, headerText, labelText, isResult) => {
     ctx.fillStyle = '#aaaaaa';
@@ -180,13 +212,9 @@ function renderCoinCanvas(pick, result, done) {
     const cy = h / 2 + 22;
 
     let fill;
-    if (!isResult) {
-      fill = '#cccccc';
-    } else if (done) {
-      fill = won ? '#ffd700' : '#555555';
-    } else {
-      fill = '#cccccc';
-    }
+    if (!isResult) fill = '#cccccc';
+    else if (done) fill = won ? '#ffd700' : '#555555';
+    else fill = '#cccccc';
 
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
@@ -199,6 +227,17 @@ function renderCoinCanvas(pick, result, done) {
     ctx.lineWidth = 3;
     ctx.stroke();
 
+    // try to draw emoji image for heads/tails
+    const label = String(labelText || '').toLowerCase();
+    if ((label === 'heads' || label === 'tails') && (headsImg || tailsImg)) {
+      const img = label === 'heads' ? headsImg : tailsImg;
+      if (img) {
+        const iw = 56, ih = 56;
+        ctx.drawImage(img, cx - iw / 2, cy - ih / 2, iw, ih);
+        return;
+      }
+    }
+
     ctx.fillStyle = isResult && done && !won ? '#aaaaaa' : '#ffffff';
     ctx.font = `bold 16px sans-serif`;
     ctx.textAlign = 'center';
@@ -207,8 +246,8 @@ function renderCoinCanvas(pick, result, done) {
     ctx.textBaseline = 'alphabetic';
   };
 
-  drawSide(w / 4, 'YOUR PICK', pick === '?' ? '?' : pick.toUpperCase(), false);
-  drawSide((w * 3) / 4, 'RESULT', done ? result.toUpperCase() : '?', true);
+  drawSide(w / 4, 'YOUR PICK', pick === '?' ? '?' : pick.toLowerCase(), false);
+  drawSide((w * 3) / 4, 'RESULT', done ? result.toLowerCase() : '?', true);
 
   return canvas.toBuffer('image/png');
 }
@@ -475,7 +514,7 @@ function renderBlackjackCanvas(playerHand, dealerHand, revealDealer) {
   }
 
   const dTotal = revealDealer ? handTotal(dealerHand) : handTotal([dealerHand[0]]);
-  const dLabel = revealDealer ? `Dealer: ${dTotal}${dTotal > 21 ? ' (Bust!)' : ''}` : `Dealer: ${handTotal([dealerHand[0]])} + ?`;
+  const dLabel = revealDealer ? `Dealer: ${dTotal}${dTotal > 21 ? '' : ''}` : `Dealer: ${handTotal([dealerHand[0]])} + ?`;
 
   ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 15px sans-serif';
@@ -484,16 +523,16 @@ function renderBlackjackCanvas(playerHand, dealerHand, revealDealer) {
   dealerHand.forEach((card, i) => drawCard(card, 28 + i * (cw + 10), 52, !revealDealer && i > 0));
 
   const pTotal = handTotal(playerHand);
-  ctx.fillStyle = '#ffd700';
+  ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 15px sans-serif';
-  ctx.fillText(`You: ${pTotal}${pTotal > 21 ? ' (Bust!)' : ''}`, 28, 210);
+  ctx.fillText(`You: ${pTotal}${pTotal > 21 ? '' : ''}`, 60, 210);
   playerHand.forEach((card, i) => drawCard(card, 28 + i * (cw + 10), 220));
 
   if (revealDealer) {
     const pt = handTotal(playerHand);
     const dt = handTotal(dealerHand);
     let msg = pt > 21 ? 'BUST!' : dt > 21 || pt > dt ? 'YOU WIN!' : pt === dt ? 'PUSH' : 'DEALER WINS';
-    ctx.fillStyle = '#ffd700';
+    ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 26px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -531,13 +570,17 @@ async function renderSlotsCanvas(reels, matchType) {
     const x = startX + i * (slotW + gap);
     const card = reels[i];
     const highlight = matchType === 'jackpot' || matchType === 'attr3' || (matchType === 'attr2' && i < 2);
-    const borderColor = highlight ? '#ffd700' : '#333333';
+    const attrColor = ATTRIBUTE_COLORS[card.attribute] || '#333333';
+    const borderColor = highlight ? '#ffd700' : attrColor;
 
     ctx.strokeStyle = borderColor;
-    ctx.lineWidth = highlight ? 3 : 1;
-    ctx.strokeRect(x, startY, slotW, slotH);
-    ctx.fillStyle = '#1a1a1a';
-    ctx.fillRect(x + 1, startY + 1, slotW - 2, slotH - 2);
+    ctx.lineWidth = highlight ? 3 : 2;
+    // subtle background tint based on attribute
+    ctx.fillStyle = highlight ? '#151515' : (card.attribute ? '#0f0f0f' : '#1a1a1a');
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(x, startY, slotW, slotH, 8) : ctx.rect(x, startY, slotW, slotH);
+    ctx.fill();
+    ctx.stroke();
 
     const emojiId = extractEmojiId(card.emoji);
     let imgLoaded = false;
@@ -560,7 +603,8 @@ async function renderSlotsCanvas(reels, matchType) {
     }
 
     const rankH = 24;
-    ctx.fillStyle = rankColors[card.rank] || '#555555';
+    // Use attribute color for the bottom bar so DEX cards show DEX color
+    ctx.fillStyle = ATTRIBUTE_COLORS[card.attribute] || '#555555';
     ctx.fillRect(x, startY + slotH - rankH, slotW, rankH);
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 11px sans-serif';
@@ -583,7 +627,7 @@ function renderScratchCanvas(grid, revealed) {
   const canvas = createCanvas(w, h);
   const ctx = canvas.getContext('2d');
 
-  ctx.fillStyle = '#f0f0f0';
+  ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, w, h);
 
   const tileW = 100, tileH = 90, gap = 15;
@@ -633,6 +677,13 @@ function renderScratchCanvas(grid, revealed) {
 // ────────────────────────────────────────────
 
 async function setCooldown(userId) {
+  try {
+    if (String(userId) === String(OWNER_ID)) {
+      const val = await getBotConfig('ownerGambleNoCooldown');
+      if (val) return; // owner bypass enabled, don't set cooldown
+    }
+  } catch (e) { /* ignore BotConfig errors and continue to set cooldown */ }
+
   await User.updateOne({ userId }, { $set: { gambleCooldownUntil: new Date(Date.now() + GAMBLE_COOLDOWN_MS) } });
 }
 
@@ -641,33 +692,29 @@ async function setCooldown(userId) {
 // ────────────────────────────────────────────
 
 async function execute({ interaction, message }) {
-  if (message) {
-    return message.reply('Please use the slash command `/gamble` to visit Sir Crocodile\'s Casino.');
-  }
-  if (!interaction) return;
-  await interaction.deferReply();
-
   const embed = new EmbedBuilder()
     .setColor('#ffd500')
     .setTitle('Casino Rain Dinners: Crocodiles Casino')
     .setImage('https://imgs.search.brave.com/zeuK_85T9vBIdoW7ZOvYCIuSDuHWDDzD__2DecdLawc/rs:fit:860:0:0:0/g:ce/aHR0cHM6Ly9zdGF0/aWMud2lraWEubm9j/b29raWUubmV0L29u/ZXBpZWNlL2ltYWdl/cy8wLzBjL1JhaW5f/RGlubmVycy5wbmcv/cmV2aXNpb24vbGF0/ZXN0L3NjYWxlLXRv/LXdpZHRoLWRvd24v/MjY4P2NiPTIwMTMw/MzE0MjAyMTIyJnBh/dGgtcHJlZml4PWVz')
     .setDescription('Welcome to Sir Crocodiles Casino! Here you can gamble every hour for a chance of winning beli.\n\n<:namigamble:1507864864012501022> Owning **Nami** gives you a beli boost!')
-    .setThumbnail(interaction.client.user.displayAvatarURL());
+    .setThumbnail((interaction && interaction.client) ? interaction.client.user.displayAvatarURL() : (message && message.client ? message.client.user.displayAvatarURL() : ''));
 
   const menu = new StringSelectMenuBuilder()
-    .setCustomId(`gamble_game:${interaction.user.id}`)
+    .setCustomId(`gamble_game:${(interaction && interaction.user) ? interaction.user.id : (message && message.author ? message.author.id : 'unknown')}`)
     .setPlaceholder('Choose a game...')
     .addOptions([
-      { label: 'Coin Flip', value: 'coin', emoji: '🪙' },
-      { label: 'Blackjack', value: 'blackjack', emoji: '🃏' },
-      { label: 'Roulette', value: 'roulette', emoji: '🎡' },
-      { label: 'Slots', value: 'slots', emoji: '🎰' },
-      { label: 'Crash', value: 'crash', emoji: '📈' },
-      { label: 'Towers', value: 'towers', emoji: '🗼' },
-      { label: 'Scratch', value: 'scratch', emoji: '🎟️' }
+      { label: 'Coin Flip', value: 'coin', emoji: GAME_EMOJIS.coin },
+      { label: 'Blackjack', value: 'blackjack', emoji: GAME_EMOJIS.blackjack },
+      { label: 'Roulette', value: 'roulette', emoji: GAME_EMOJIS.roulette },
+      { label: 'Slots', value: 'slots', emoji: GAME_EMOJIS.slots },
+      { label: 'Crash', value: 'crash', emoji: GAME_EMOJIS.crash },
+      { label: 'Towers', value: 'towers', emoji: GAME_EMOJIS.towers },
+      { label: 'Scratch', value: 'scratch', emoji: GAME_EMOJIS.scratch }
     ]);
 
-  await interaction.editReply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(menu)] });
+  const row = new ActionRowBuilder().addComponents(menu);
+
+    return message ? message.channel.send({ embeds: [embed], components: [row] }) : (await interaction.deferReply(), await interaction.editReply({ embeds: [embed], components: [row] }));
 }
 
 // ────────────────────────────────────────────
@@ -684,7 +731,23 @@ async function handleSelect(interaction) {
     await interaction.deferUpdate();
     const session = gambleSessions.get(userId);
     if (!session) return;
-    return handleRouletteSpin(interaction, session, interaction.values[0]);
+    const choice = interaction.values[0];
+    if (choice === 'lucky') {
+      // show modal to pick a lucky number
+      const modal = new ModalBuilder()
+        .setCustomId(`gamble_roul_lucky:${userId}`)
+        .setTitle('Pick a lucky number');
+      const input = new TextInputBuilder()
+        .setCustomId('luckyNumber')
+        .setLabel('Enter a number (0-36)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('e.g. 7')
+        .setRequired(true);
+      const row = new ActionRowBuilder().addComponents(input);
+      modal.addComponents(row);
+      return interaction.showModal(modal);
+    }
+    return handleRouletteSpin(interaction, session, choice);
   }
 
   await interaction.deferUpdate();
@@ -694,7 +757,15 @@ async function handleSelect(interaction) {
 
   if (action === 'gamble_game') {
     const now = new Date();
-    if (user.gambleCooldownUntil && user.gambleCooldownUntil > now) {
+    let skipCooldown = false;
+    try {
+      if (interaction.user && String(interaction.user.id) === String(OWNER_ID)) {
+        const val = await getBotConfig('ownerGambleNoCooldown');
+        if (val) skipCooldown = true;
+      }
+    } catch (e) {}
+
+    if (!skipCooldown && user.gambleCooldownUntil && user.gambleCooldownUntil > now) {
       const remaining = formatTimeLeft(user.gambleCooldownUntil - now);
       return interaction.followUp({
         content: `You must wait **${remaining}** before gambling again.`,
@@ -718,15 +789,15 @@ async function handleSelect(interaction) {
 
     const gameNames = { coin: 'Coin Flip', blackjack: 'Blackjack', roulette: 'Roulette', slots: 'Slots', crash: 'Crash', towers: 'Towers', scratch: 'Scratch' };
     const embed = new EmbedBuilder()
-      .setColor('#ffd500')
+      .setColor('#212120')
       .setTitle('Casino Rain Dinners: Crocodiles Casino')
       .setDescription(`You selected **${gameNames[game] || game}**.\n\nHow much Beli do you want to bet?`)
       .setThumbnail(interaction.client.user.displayAvatarURL());
 
-    return interaction.editReply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(betMenu)], files: [] });
-  }
+    return interaction.editReply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(betMenu)] });
+      }
 
-  if (action === 'gamble_bet') {
+      if (action === 'gamble_bet') {
     const game = parts[2];
     let bet = interaction.values[0] === 'allin'
       ? Math.max(100, user.balance || 0)
@@ -763,13 +834,15 @@ async function handleSelect(interaction) {
 
 async function startCoinFlip(interaction, session) {
   session.state = { phase: 'picking' };
-  const buf = renderCoinCanvas('?', '?', false);
+  const buf = await renderCoinCanvas('?', '?', false);
   const att = new AttachmentBuilder(buf, { name: 'coin.png' });
   const embed = new EmbedBuilder()
-    .setColor('#ffffff')
-    .setTitle('Coin Flip')
+    .setColor('#212120')
+    .setTitle(`${GAME_EMOJIS.coin} Coin Flip — Crocodiles Casino`)
     .setDescription(`**Bet:** ${formatBeli(session.bet)}\nPick **Heads** or **Tails**.`)
-    .setImage('attachment://coin.png');
+    .setThumbnail((interaction && interaction.client) ? interaction.client.user.displayAvatarURL() : '')
+    .setImage('attachment://coin.png')
+    .setFooter({ text: 'Choose quickly — may the odds be in your favor!' });
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`gamble_btn:${session.userId}:coin:heads`).setLabel('Heads').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId(`gamble_btn:${session.userId}:coin:tails`).setLabel('Tails').setStyle(ButtonStyle.Primary)
@@ -790,10 +863,12 @@ async function startBlackjack(interaction, session) {
   const buf = renderBlackjackCanvas(playerHand, dealerHand, false);
   const att = new AttachmentBuilder(buf, { name: 'blackjack.png' });
   const embed = new EmbedBuilder()
-    .setColor('#ffffff')
-    .setTitle('Blackjack')
+    .setColor('#0d5c2c')
+    .setTitle(`${GAME_EMOJIS.blackjack} Blackjack — Crocodiles Casino`)
+    .setThumbnail((interaction && interaction.client) ? interaction.client.user.displayAvatarURL() : '')
     .setDescription(`**Bet:** ${formatBeli(session.bet)} | **Your hand:** ${handTotal(playerHand)}`)
-    .setImage('attachment://blackjack.png');
+    .setImage('attachment://blackjack.png')
+    .setFooter({ text: 'Hit / Stand / Double Down' });
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`gamble_btn:${session.userId}:bj:hit`).setLabel('Hit').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId(`gamble_btn:${session.userId}:bj:stand`).setLabel('Stand').setStyle(ButtonStyle.Danger),
@@ -806,35 +881,55 @@ async function startRoulette(interaction, session) {
   session.state = { phase: 'picking' };
   const embed = new EmbedBuilder()
     .setColor('#ffffff')
-    .setTitle('Roulette')
+    .setTitle(`${GAME_EMOJIS.roulette} Roulette`)
     .setDescription(`**Bet:** ${formatBeli(session.bet)}\nChoose where to place your bet.`);
   const menu = new StringSelectMenuBuilder()
     .setCustomId(`gamble_roul:${session.userId}`)
     .setPlaceholder('Pick a bet type...')
     .addOptions([
-      { label: 'Red (×2)', value: 'red', emoji: '🔴' },
-      { label: 'Black (×2)', value: 'black', emoji: '⚫' },
-      { label: 'Green 0 (×18)', value: 'green', emoji: '🟢' },
-      { label: 'Lucky Number — random (×36)', value: 'lucky', emoji: '🍀' }
+      { label: 'Red (×2)', value: 'red' },
+      { label: 'Black (×2)', value: 'black' },
+      { label: 'Green 0 (×18)', value: 'green' },
+      { label: 'Lucky Number — choose (×36)', value: 'lucky' }
     ]);
   return interaction.editReply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(menu)], files: [] });
 }
 
 async function startSlots(interaction, session) {
-  let reels = [rollSlotCard(), rollSlotCard(), rollSlotCard()];
   const pool = getSlotPool();
-  const r = Math.random();
-  if (r < 0.20) {
-    const attr = reels[0].attribute;
-    const ap = pool.filter(c => c.attribute === attr);
-    if (ap.length >= 2) {
-      reels[1] = ap[Math.floor(Math.random() * ap.length)];
-      reels[2] = ap[Math.floor(Math.random() * ap.length)];
+  if (!pool.length) {
+    // fallback to naive random reels when no pool available
+    const reels = [rollSlotCard(), rollSlotCard(), rollSlotCard()];
+    const buf = await renderSlotsCanvas(reels, 'none');
+    const att = new AttachmentBuilder(buf, { name: 'slots.png' });
+    const desc = `**Bet:** ${formatBeli(session.bet)}\n\n**No match. Better luck next time!**`;
+    const embed = new EmbedBuilder()
+      .setColor('#ffffff')
+      .setTitle('Slots')
+      .setDescription(desc)
+      .setImage('attachment://slots.png');
+    await setCooldown(session.userId);
+    gambleSessions.delete(session.userId);
+    return interaction.editReply({ embeds: [embed], components: [], files: [att] });
+  }
+
+  // Choose first reel uniformly from pool
+  const reels = [];
+  reels[0] = pool[Math.floor(Math.random() * pool.length)];
+
+  // Make exact same-card matches more probable than pure RNG
+  for (let i = 1; i < 3; i++) {
+    const pSame = 0.35; // probability to repeat the same exact card
+    const pAttr = 0.25; // probability to pick a card with same attribute
+    if (Math.random() < pSame) {
+      reels[i] = reels[0];
+    } else if (Math.random() < pAttr) {
+      const sameAttr = pool.filter(c => c.attribute === reels[0].attribute && c.id !== reels[0].id);
+      if (sameAttr.length) reels[i] = sameAttr[Math.floor(Math.random() * sameAttr.length)];
+      else reels[i] = pool[Math.floor(Math.random() * pool.length)];
+    } else {
+      reels[i] = pool[Math.floor(Math.random() * pool.length)];
     }
-  } else if (r < 0.70) {
-    const attr = reels[0].attribute;
-    const ap = pool.filter(c => c.attribute === attr);
-    if (ap.length) reels[1] = ap[Math.floor(Math.random() * ap.length)];
   }
 
   const ids = reels.map(c => c.id);
@@ -849,15 +944,15 @@ async function startSlots(interaction, session) {
 
   if (allSame) {
     payoutMult = 20; matchType = 'jackpot';
-    resultLine = '🎉 **JACKPOT! 3-of-a-kind!** Card added to your collection!';
+    resultLine = '**JACKPOT! 3-of-a-kind!** Card added to your collection!';
   } else if (allAttr) {
     payoutMult = 5; matchType = 'attr3';
-    resultLine = `🟡 **3 ${attrs[0]} Attribute Match!** ×${payoutMult}`;
+    resultLine = `**3 ${attrs[0]} Attribute Match!** ×${payoutMult}`;
   } else if (twoAttr) {
     payoutMult = 1.5; matchType = 'attr2';
-    resultLine = `🟡 **2 Attribute Match!** ×${payoutMult}`;
+    resultLine = `**2 Attribute Match!** ×${payoutMult}`;
   } else {
-    resultLine = '❌ **No match. Better luck next time!**';
+    resultLine = '**No match. Better luck next time!**';
   }
 
   const winnings = payoutMult > 0 ? Math.floor(session.bet * payoutMult * session.namiMultiplier) : 0;
@@ -878,7 +973,12 @@ async function startSlots(interaction, session) {
 
   const buf = await renderSlotsCanvas(reels, matchType);
   const att = new AttachmentBuilder(buf, { name: 'slots.png' });
-  const desc = `**Bet:** ${formatBeli(session.bet)}\n\n${resultLine}${winnings > 0 ? `\n**Won:** ${formatBeli(winnings)}` : ''}${bonusLine}`;
+  let namiBoostLine = '';
+  if (winnings > 0 && session.namiMultiplier && session.namiMultiplier > 1) {
+    const pct = ((session.namiMultiplier - 1) * 100).toFixed(2);
+    namiBoostLine = `\n**Nami boost:** +${pct}% (×${session.namiMultiplier.toFixed(2)})`;
+  }
+  const desc = `**Bet:** ${formatBeli(session.bet)}\n\n${resultLine}${winnings > 0 ? `\n**Won:** ${formatBeli(winnings)}` : ''}${namiBoostLine}${bonusLine}`;
   const embed = new EmbedBuilder()
     .setColor('#ffffff')
     .setTitle('Slots')
@@ -895,16 +995,47 @@ async function startCrash(interaction, session) {
   const att = new AttachmentBuilder(buf, { name: 'crash.png' });
   const embed = new EmbedBuilder()
     .setColor('#ffffff')
-    .setTitle('Crash')
+    .setTitle(`${GAME_EMOJIS.crash} Crash`)
     .setDescription(`**Bet:** ${formatBeli(session.bet)}\nThe multiplier is climbing — cash out before it crashes!`)
     .setImage('attachment://crash.png');
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`gamble_btn:${session.userId}:crash:cashout`)
-      .setLabel('💰 Cash Out')
+      .setLabel('Cash Out')
       .setStyle(ButtonStyle.Success)
   );
-  return interaction.editReply({ embeds: [embed], components: [row], files: [att] });
+  await interaction.editReply({ embeds: [embed], components: [row], files: [att] });
+
+  // Periodically update the crash embed to show the climbing multiplier
+  try {
+    if (crashIntervals.has(session.userId)) {
+      clearInterval(crashIntervals.get(session.userId));
+      crashIntervals.delete(session.userId);
+    }
+    const iv = setInterval(async () => {
+      try {
+        // stop if session no longer active
+        const active = gambleSessions.get(session.userId);
+        if (!active || active.state.phase !== 'playing') {
+          clearInterval(iv);
+          crashIntervals.delete(session.userId);
+          return;
+        }
+        const nowMult = crashCurrentMult(session.state.startTime);
+        const buf2 = renderCrashCanvas(nowMult, false, null);
+        const att2 = new AttachmentBuilder(buf2, { name: 'crash.png' });
+        const upd = new EmbedBuilder()
+          .setColor('#ffffff')
+          .setTitle('Crash')
+          .setDescription(`**Bet:** ${formatBeli(session.bet)}\n\nThe multiplier is climbing — current: ${nowMult.toFixed(2)}×\nCash out before it crashes!`)
+          .setImage('attachment://crash.png');
+        await interaction.editReply({ embeds: [upd], components: [row], files: [att2] }).catch(() => {});
+      } catch (e) {}
+    }, 400);
+    crashIntervals.set(session.userId, iv);
+  } catch (e) {}
+
+  return;
 }
 
 async function startTowers(interaction, session) {
@@ -914,7 +1045,7 @@ async function startTowers(interaction, session) {
   const att = new AttachmentBuilder(buf, { name: 'towers.png' });
   const embed = new EmbedBuilder()
     .setColor('#ffffff')
-    .setTitle('Towers')
+    .setTitle(`${GAME_EMOJIS.towers} Towers`)
     .setDescription(`**Bet:** ${formatBeli(session.bet)}\nPick a safe tile each floor. Reach the top for **${TOWER_PAYOUTS[TOWER_PAYOUTS.length - 1]}×**!\n**Floor 1 — Potential: ${TOWER_PAYOUTS[0]}×**`)
     .setImage('attachment://towers.png');
   const tileRow = new ActionRowBuilder().addComponents(
@@ -983,14 +1114,20 @@ async function handleCoinButton(interaction, session, pick) {
   await setCooldown(session.userId);
   gambleSessions.delete(session.userId);
 
-  const buf = renderCoinCanvas(pick, result, true);
+  const buf = await renderCoinCanvas(pick, result, true);
   const att = new AttachmentBuilder(buf, { name: 'coin.png' });
+  let namiBoostLine = '';
+  if (won && session.namiMultiplier && session.namiMultiplier > 1) {
+    const pct = ((session.namiMultiplier - 1) * 100).toFixed(2);
+    namiBoostLine = `\n**Nami boost:** +${pct}% (×${session.namiMultiplier.toFixed(2)})`;
+  }
   const desc = `**Bet:** ${formatBeli(session.bet)}\n\nYou picked **${pick}** — Result: **${result}**\n`
-    + (won ? `🎉 **You won ${formatBeli(winnings)}!**` : `❌ **You lost ${formatBeli(session.bet)}.**`);
+    + (won ? `**You won ${formatBeli(winnings)}!**${namiBoostLine}` : `**You lost ${formatBeli(session.bet)}.**`);
   const embed = new EmbedBuilder()
-    .setColor('#ffffff')
-    .setTitle('Coin Flip')
+    .setColor('#212120')
+    .setTitle(`${GAME_EMOJIS.coin} Coin Flip`)
     .setDescription(desc)
+    .setThumbnail((interaction && interaction.client) ? interaction.client.user.displayAvatarURL() : '')
     .setImage('attachment://coin.png');
   return interaction.editReply({ embeds: [embed], components: [], files: [att] });
 }
@@ -1016,7 +1153,7 @@ async function handleBlackjackButton(interaction, session, action) {
     const buf = renderBlackjackCanvas(playerHand, dealerHand, false);
     const att = new AttachmentBuilder(buf, { name: 'blackjack.png' });
     const embed = new EmbedBuilder()
-      .setColor('#ffffff')
+      .setColor('#0d5c2c')
       .setTitle('Blackjack')
       .setDescription(`**Bet:** ${formatBeli(session.bet)} | **Your hand:** ${handTotal(playerHand)}`)
       .setImage('attachment://blackjack.png');
@@ -1043,18 +1180,18 @@ async function finishBlackjack(interaction, session, reason) {
   let outcome;
 
   if (reason === 'bust') {
-    outcome = '❌ **Bust!**';
+    outcome = '**Bust!**';
   } else if (reason === 'blackjack') {
     payoutMult = 2.5;
-    outcome = '🃏 **Blackjack! Natural 21!**';
+    outcome = '**Blackjack! Natural 21!**';
   } else if (dt > 21 || pt > dt) {
     payoutMult = 2;
-    outcome = '🎉 **You win!**';
+    outcome = '**You win!**';
   } else if (pt === dt) {
     payoutMult = 1;
-    outcome = '🤝 **Push — bet returned.**';
+    outcome = '**Push — bet returned.**';
   } else {
-    outcome = '❌ **Dealer wins.**';
+    outcome = '**Dealer wins.**';
   }
 
   const winnings = payoutMult > 0 ? Math.floor(session.bet * payoutMult * (payoutMult > 1 ? session.namiMultiplier : 1)) : 0;
@@ -1064,12 +1201,17 @@ async function finishBlackjack(interaction, session, reason) {
 
   const buf = renderBlackjackCanvas(playerHand, dealerHand, true);
   const att = new AttachmentBuilder(buf, { name: 'blackjack.png' });
+  let namiBoostLine = '';
+  if (winnings > 0 && session.namiMultiplier && session.namiMultiplier > 1) {
+    const pct = ((session.namiMultiplier - 1) * 100).toFixed(2);
+    namiBoostLine = `\n**Nami boost:** +${pct}% (×${session.namiMultiplier.toFixed(2)})`;
+  }
   const desc = payoutMult > 0
-    ? `**Bet:** ${formatBeli(session.bet)}\n\n${outcome}\n**${payoutMult === 1 ? 'Returned:' : 'Won:'}** ${formatBeli(winnings)}`
+    ? `**Bet:** ${formatBeli(session.bet)}\n\n${outcome}\n**${payoutMult === 1 ? 'Returned:' : 'Won:'}** ${formatBeli(winnings)}${namiBoostLine}`
     : `**Bet:** ${formatBeli(session.bet)}\n\n${outcome}`;
   const embed = new EmbedBuilder()
-    .setColor('#ffffff')
-    .setTitle('Blackjack')
+    .setColor('#0d5c2c')
+    .setTitle(`${GAME_EMOJIS.blackjack} Blackjack`)
     .setDescription(desc)
     .setImage('attachment://blackjack.png');
   return interaction.editReply({ embeds: [embed], components: [], files: [att] });
@@ -1086,8 +1228,13 @@ async function handleRouletteSpin(interaction, session, betType) {
   if (betType === 'red' && isRed) { won = true; payoutMult = 2; }
   else if (betType === 'black' && isBlack) { won = true; payoutMult = 2; }
   else if (betType === 'green' && isGreen) { won = true; payoutMult = 18; }
-  else if (betType === 'lucky') {
-    luckyNum = Math.floor(Math.random() * 37);
+  else if (typeof betType === 'string' && betType.startsWith('lucky')) {
+    const parts = betType.split(':');
+    if (parts.length > 1) {
+      const parsed = parseInt(parts[1], 10);
+      if (!isNaN(parsed) && parsed >= 0 && parsed <= 36) luckyNum = parsed;
+    }
+    if (luckyNum === null) luckyNum = Math.floor(Math.random() * 37);
     if (luckyNum === number) { won = true; payoutMult = 36; }
   }
 
@@ -1099,14 +1246,20 @@ async function handleRouletteSpin(interaction, session, betType) {
   const buf = renderRouletteCanvas(number, won);
   const att = new AttachmentBuilder(buf, { name: 'roulette.png' });
 
-  let betLine = betType === 'lucky'
+  let betLine = (typeof betType === 'string' && betType.startsWith('lucky'))
     ? `**Your lucky number:** ${luckyNum} — **Ball landed on:** ${number}`
     : `**Bet type:** ${betType.charAt(0).toUpperCase() + betType.slice(1)} — **Ball landed on:** ${number}`;
-  const desc = `**Bet:** ${formatBeli(session.bet)}\n${betLine}\n\n`
-    + (won ? `🎉 **Won ${formatBeli(winnings)}!** (×${payoutMult})` : `❌ **You lost ${formatBeli(session.bet)}.**`);
+  let namiBoostLine = '';
+  if (winnings > 0 && session.namiMultiplier && session.namiMultiplier > 1) {
+    const pct = ((session.namiMultiplier - 1) * 100).toFixed(2);
+    namiBoostLine = `\n**Nami boost:** +${pct}% (×${session.namiMultiplier.toFixed(2)})`;
+  }
+
+  const desc = `**Bet:** ${formatBeli(session.bet)}\n${betLine}\n\n` +
+    (won ? `**Won ${formatBeli(winnings)}!** (×${payoutMult})${namiBoostLine}` : `**You lost ${formatBeli(session.bet)}.**`);
   const embed = new EmbedBuilder()
     .setColor('#ffffff')
-    .setTitle('Roulette')
+    .setTitle(`${GAME_EMOJIS.roulette} Roulette`)
     .setDescription(desc)
     .setImage('attachment://roulette.png');
   return interaction.editReply({ embeds: [embed], components: [], files: [att] });
@@ -1120,12 +1273,18 @@ async function handleCrashButton(interaction, session) {
   if (crashed) {
     await setCooldown(session.userId);
     gambleSessions.delete(session.userId);
+    try {
+      if (crashIntervals.has(session.userId)) {
+        clearInterval(crashIntervals.get(session.userId));
+        crashIntervals.delete(session.userId);
+      }
+    } catch (e) {}
     const buf = renderCrashCanvas(parseFloat(crashAt.toFixed(2)), true, null);
     const att = new AttachmentBuilder(buf, { name: 'crash.png' });
     const embed = new EmbedBuilder()
       .setColor('#ffffff')
-      .setTitle('Crash')
-      .setDescription(`**Bet:** ${formatBeli(session.bet)}\n\n💥 **Crashed at ${crashAt.toFixed(2)}× before you cashed out!**\n❌ **Lost ${formatBeli(session.bet)}.**`)
+      .setTitle(`${GAME_EMOJIS.crash} Crash`)
+      .setDescription(`**Bet:** ${formatBeli(session.bet)}\n\n**Crashed at ${crashAt.toFixed(2)}× before you cashed out!**\n**Lost ${formatBeli(session.bet)}.**`)
       .setImage('attachment://crash.png');
     return interaction.editReply({ embeds: [embed], components: [], files: [att] });
   }
@@ -1134,13 +1293,24 @@ async function handleCrashButton(interaction, session) {
   await User.updateOne({ userId: session.userId }, { $inc: { balance: winnings } });
   await setCooldown(session.userId);
   gambleSessions.delete(session.userId);
+  try {
+    if (crashIntervals.has(session.userId)) {
+      clearInterval(crashIntervals.get(session.userId));
+      crashIntervals.delete(session.userId);
+    }
+  } catch (e) {}
 
   const buf = renderCrashCanvas(currentMult, false, currentMult);
   const att = new AttachmentBuilder(buf, { name: 'crash.png' });
+  let namiBoostLine = '';
+  if (winnings > 0 && session.namiMultiplier && session.namiMultiplier > 1) {
+    const pct = ((session.namiMultiplier - 1) * 100).toFixed(2);
+    namiBoostLine = `\n**Nami boost:** +${pct}% (×${session.namiMultiplier.toFixed(2)})`;
+  }
   const embed = new EmbedBuilder()
     .setColor('#ffffff')
-    .setTitle('Crash')
-    .setDescription(`**Bet:** ${formatBeli(session.bet)}\n\n💰 **Cashed out at ${currentMult.toFixed(2)}×!**\n🎉 **Won ${formatBeli(winnings)}!**`)
+    .setTitle(`${GAME_EMOJIS.crash} Crash`)
+    .setDescription(`**Bet:** ${formatBeli(session.bet)}\n\n**Cashed out at ${currentMult.toFixed(2)}×!**\n**Won ${formatBeli(winnings)}!**${namiBoostLine}`)
     .setImage('attachment://crash.png');
   return interaction.editReply({ embeds: [embed], components: [], files: [att] });
 }
@@ -1158,10 +1328,15 @@ async function handleTowerButton(interaction, session, tile) {
     gambleSessions.delete(session.userId);
     const buf = renderTowersCanvas(session.state);
     const att = new AttachmentBuilder(buf, { name: 'towers.png' });
+    let namiBoostLine = '';
+    if (winnings > 0 && session.namiMultiplier && session.namiMultiplier > 1) {
+      const pct = ((session.namiMultiplier - 1) * 100).toFixed(2);
+      namiBoostLine = `\n**Nami boost:** +${pct}% (×${session.namiMultiplier.toFixed(2)})`;
+    }
     const embed = new EmbedBuilder()
       .setColor('#ffffff')
-      .setTitle('Towers')
-      .setDescription(`**Bet:** ${formatBeli(session.bet)}\n\n💰 **Cashed out at ${payoutMult}×!**\n🎉 **Won ${formatBeli(winnings)}!**`)
+      .setTitle(`${GAME_EMOJIS.towers} Towers`)
+      .setDescription(`**Bet:** ${formatBeli(session.bet)}\n\n**Cashed out at ${payoutMult}×!**\n**Won ${formatBeli(winnings)}!**${namiBoostLine}`)
       .setImage('attachment://towers.png');
     return interaction.editReply({ embeds: [embed], components: [], files: [att] });
   }
@@ -1181,8 +1356,8 @@ async function handleTowerButton(interaction, session, tile) {
     const att = new AttachmentBuilder(buf, { name: 'towers.png' });
     const embed = new EmbedBuilder()
       .setColor('#ffffff')
-      .setTitle('Towers')
-      .setDescription(`**Bet:** ${formatBeli(session.bet)}\n\n💣 **Boom! You hit a bomb on floor ${currentFloor + 1}!**\n❌ **Lost ${formatBeli(session.bet)}.**`)
+      .setTitle(`${GAME_EMOJIS.towers} Towers`)
+      .setDescription(`**Bet:** ${formatBeli(session.bet)}\n\n**Boom! You hit a bomb on floor ${currentFloor + 1}!**\n**Lost ${formatBeli(session.bet)}.**`)
       .setImage('attachment://towers.png');
     return interaction.editReply({ embeds: [embed], components: [], files: [att] });
   }
@@ -1198,10 +1373,15 @@ async function handleTowerButton(interaction, session, tile) {
     gambleSessions.delete(session.userId);
     const buf = renderTowersCanvas(session.state);
     const att = new AttachmentBuilder(buf, { name: 'towers.png' });
+    let namiBoostLine2 = '';
+    if (winnings > 0 && session.namiMultiplier && session.namiMultiplier > 1) {
+      const pct2 = ((session.namiMultiplier - 1) * 100).toFixed(2);
+      namiBoostLine2 = `\n**Nami boost:** +${pct2}% (×${session.namiMultiplier.toFixed(2)})`;
+    }
     const embed = new EmbedBuilder()
       .setColor('#ffffff')
-      .setTitle('Towers')
-      .setDescription(`**Bet:** ${formatBeli(session.bet)}\n\n🏆 **All floors cleared! ${currentPayout}×!**\n🎉 **Won ${formatBeli(winnings)}!**`)
+      .setTitle(`${GAME_EMOJIS.towers} Towers`)
+      .setDescription(`**Bet:** ${formatBeli(session.bet)}\n\n**All floors cleared! ${currentPayout}×!**\n**Won ${formatBeli(winnings)}!**${namiBoostLine2}`)
       .setImage('attachment://towers.png');
     return interaction.editReply({ embeds: [embed], components: [], files: [att] });
   }
@@ -1214,9 +1394,9 @@ async function handleTowerButton(interaction, session, tile) {
   const att = new AttachmentBuilder(buf, { name: 'towers.png' });
   const embed = new EmbedBuilder()
     .setColor('#ffffff')
-    .setTitle('Towers')
+    .setTitle(`${GAME_EMOJIS.towers} Towers`)
     .setDescription(
-      `**Bet:** ${formatBeli(session.bet)}\n✅ **Floor ${currentFloor + 1} cleared!**\n`
+      `**Bet:** ${formatBeli(session.bet)}\n**Floor ${currentFloor + 1} cleared!**\n`
       + `**Next floor potential:** ${nextPayout}× | **Take now:** ${currentPayout}× = ${formatBeli(currentWinnings)}`
     )
     .setImage('attachment://towers.png');
@@ -1286,12 +1466,17 @@ async function handleScratchButton(interaction, session, tileIndex) {
     await setCooldown(session.userId);
     gambleSessions.delete(session.userId);
 
+    let namiBoostLine = '';
+    if (winnings > 0 && session.namiMultiplier && session.namiMultiplier > 1) {
+      const pct = ((session.namiMultiplier - 1) * 100).toFixed(2);
+      namiBoostLine = `\n**Nami boost:** +${pct}% (×${session.namiMultiplier.toFixed(2)})`;
+    }
     const embed = new EmbedBuilder()
       .setColor('#ffffff')
-      .setTitle('Scratch Card')
+      .setTitle(`${GAME_EMOJIS.scratch} Scratch Card`)
       .setDescription(winnings > 0
-        ? `**Bet:** ${formatBeli(session.bet)}\n\n🎉 **Won ${formatBeli(winnings)}!**`
-        : `**Bet:** ${formatBeli(session.bet)}\n\n❌ **No 3-of-a-kind match. Better luck next time!**`)
+        ? `**Bet:** ${formatBeli(session.bet)}\n\n**Won ${formatBeli(winnings)}!**${namiBoostLine}`
+        : `**Bet:** ${formatBeli(session.bet)}\n\n**No 3-of-a-kind match. Better luck next time!**`)
       .setImage('attachment://scratch.png');
     return interaction.editReply({ embeds: [embed], components: [], files: [att] });
   }
@@ -1332,6 +1517,22 @@ async function handleNamiAbilityButton(interaction, cardId) {
   });
 }
 
+// Handle modal submit for roulette lucky number
+async function handleRouletteModal(interaction) {
+  const parts = interaction.customId.split(':');
+  const userId = parts[1];
+  if (interaction.user.id !== userId) return interaction.reply({ content: 'This modal is not for you.', ephemeral: true });
+  const val = interaction.fields.getTextInputValue('luckyNumber');
+  const num = parseInt(val, 10);
+  if (isNaN(num) || num < 0 || num > 36) return interaction.reply({ content: 'Please enter a number between 0 and 36.', ephemeral: true });
+  const session = gambleSessions.get(userId);
+  if (!session) return interaction.reply({ content: 'No active gamble session.', ephemeral: true });
+  await interaction.deferReply();
+  return handleRouletteSpin(interaction, session, `lucky:${num}`);
+}
+
+
+
 module.exports = {
   name: 'gamble',
   description: "Visit Sir Crocodile's Casino for a chance to win Beli",
@@ -1339,6 +1540,7 @@ module.exports = {
   handleSelect,
   handleButton,
   handleNamiAbilityButton,
+  handleRouletteModal,
   getNamiMultiplier,
   BLACKJACK_DECK_ASSETS
 };

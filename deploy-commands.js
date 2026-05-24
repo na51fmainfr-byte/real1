@@ -217,6 +217,18 @@ commands.push({
       description: 'Remove a member from your crew (captain only)',
       options: [{ name: 'user', type: 6, description: 'User to remove', required: true }]
     },
+    {
+      name: 'color',
+      type: 1,
+      description: 'Set the crew embed colour (captain only)',
+      options: [{ name: 'hex', type: 3, description: 'Hex colour code e.g. #FF0000', required: true }]
+    },
+    {
+      name: 'jolly',
+      type: 1,
+      description: 'Set the crew jolly roger image (captain only)',
+      options: [{ name: 'url', type: 3, description: 'Image URL for the jolly roger', required: true }]
+    },
     { name: 'leave',       type: 1, description: 'Leave your current crew' },
     { name: 'disband',     type: 1, description: 'Disband your crew (captain only)' },
     { name: 'leaderboard', type: 1, description: 'View top crews by total bounty' }
@@ -230,14 +242,13 @@ const token = process.env.DISCORD_TOKEN || process.env.TOKEN;
 const rest = new REST({ version: '10' }).setToken(token);
 
 const clientId = process.env.CLIENT_ID;
-const guildId = process.env.GUILD_ID; // dev guild
 
 async function deploy() {
   try {
-    if (!clientId || !guildId) return console.log('CLIENT_ID and GUILD_ID must be set in .env');
-    console.log('Started refreshing application (/) commands.');
-    await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commands });
-    console.log('Successfully reloaded application (/) commands.');
+    if (!clientId) return console.log('CLIENT_ID must be set as an environment secret.');
+    console.log('Started refreshing application (/) commands globally...');
+    await rest.put(Routes.applicationCommands(clientId), { body: commands });
+    console.log('Successfully reloaded application (/) commands. Global commands may take up to 1 hour to propagate.');
   } catch (error) {
     console.error(error);
   }

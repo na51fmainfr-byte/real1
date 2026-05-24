@@ -85,6 +85,21 @@ const COMMAND_CATEGORIES = {
       { name: 'timers', desc: 'Check all your timers' },
       { name: 'help', desc: 'Show this help menu' }
     ]
+  },
+  crew: {
+    name: 'Crew',
+    emoji: '🏴‍☠️',
+    commands: [
+      { name: 'crew view [@user]', desc: 'View your crew or another player\'s crew' },
+      { name: 'crew create <name>', desc: 'Create a new crew (prefix) or use /crew view for the form' },
+      { name: 'crew add @user', desc: 'Add a member to your crew (captain only)' },
+      { name: 'crew remove @user', desc: 'Remove a member from your crew (captain only)' },
+      { name: 'crew color <#hex>', desc: 'Set the crew embed colour (captain only)' },
+      { name: 'crew jolly <url>', desc: 'Set the crew jolly roger image (captain only)' },
+      { name: 'crew leave', desc: 'Leave your current crew' },
+      { name: 'crew disband', desc: 'Disband your crew (captain only)' },
+      { name: 'crew leaderboard', desc: 'View the top crews by total bounty' }
+    ]
   }
 };
 

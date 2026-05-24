@@ -68,6 +68,12 @@ async function buildCrewEmbed(crew, client) {
     desc += `\n\n**Members**\n${memberLines.join('\n')}`;
   }
 
+  let captainAvatar = null;
+  try {
+    const captainUser = await client.users.fetch(crew.captainId);
+    captainAvatar = captainUser.displayAvatarURL({ extension: 'png', size: 256 });
+  } catch {}
+
   const embed = new EmbedBuilder()
     .setTitle(`🏴‍☠️  ${crew.name}`)
     .setColor(crew.color || '#2b2d31')
@@ -78,7 +84,8 @@ async function buildCrewEmbed(crew, client) {
       { name: '⚔️ Total Power', value: totalPower.toLocaleString(), inline: true }
     );
 
-  if (crew.jollyRoger) embed.setThumbnail(crew.jollyRoger);
+  if (captainAvatar) embed.setThumbnail(captainAvatar);
+  if (crew.jollyRoger) embed.setImage(crew.jollyRoger);
   return embed;
 }
 
@@ -163,6 +170,58 @@ module.exports = {
 
       const embed = await buildCrewEmbed(crew, client);
       return message.reply({ content: '✅ Crew created!', embeds: [embed] });
+    }
+
+    // ── COLOR ─────────────────────────────────────────────────────────────────
+    if (sub === 'color') {
+      const hex = interaction ? interaction.options.getString('hex') : (args?.[1] || '');
+      if (!hex || !isValidHex(hex)) {
+        const content = 'Please provide a valid hex colour, e.g. `#FF0000`.';
+        if (message) return message.reply(content);
+        return interaction.reply({ content, ephemeral: true });
+      }
+      const crew = await getCrewForUser(userId);
+      if (!crew) {
+        const content = "You're not in a crew.";
+        if (message) return message.reply(content);
+        return interaction.reply({ content, ephemeral: true });
+      }
+      if (crew.captainId !== userId) {
+        const content = 'Only the captain can change the crew colour.';
+        if (message) return message.reply(content);
+        return interaction.reply({ content, ephemeral: true });
+      }
+      crew.color = hex;
+      await crew.save();
+      const embed = await buildCrewEmbed(crew, client);
+      if (message) return message.reply({ content: `✅ Crew colour updated to \`${hex}\`.`, embeds: [embed] });
+      return interaction.reply({ content: `✅ Crew colour updated to \`${hex}\`.`, embeds: [embed] });
+    }
+
+    // ── JOLLY ROGER ───────────────────────────────────────────────────────────
+    if (sub === 'jolly') {
+      const url = interaction ? interaction.options.getString('url') : (args?.[1] || '');
+      if (!url || !isValidUrl(url)) {
+        const content = 'Please provide a valid image URL starting with `https://`.';
+        if (message) return message.reply(content);
+        return interaction.reply({ content, ephemeral: true });
+      }
+      const crew = await getCrewForUser(userId);
+      if (!crew) {
+        const content = "You're not in a crew.";
+        if (message) return message.reply(content);
+        return interaction.reply({ content, ephemeral: true });
+      }
+      if (crew.captainId !== userId) {
+        const content = 'Only the captain can change the jolly roger.';
+        if (message) return message.reply(content);
+        return interaction.reply({ content, ephemeral: true });
+      }
+      crew.jollyRoger = url;
+      await crew.save();
+      const embed = await buildCrewEmbed(crew, client);
+      if (message) return message.reply({ content: '✅ Jolly roger updated.', embeds: [embed] });
+      return interaction.reply({ content: '✅ Jolly roger updated.', embeds: [embed] });
     }
 
     // ── ADD ───────────────────────────────────────────────────────────────────
@@ -296,6 +355,13 @@ module.exports = {
           components: [row],
           ephemeral: true
         });
+      }
+      // Prefix: require explicit confirm keyword
+      const confirmed = (args?.[1] || '').toLowerCase() === 'confirm';
+      if (!confirmed) {
+        return message.reply(
+          `⚠️ Are you sure you want to disband **${crew.name}**? This cannot be undone.\nType \`op crew disband confirm\` to proceed.`
+        );
       }
       await Crew.deleteOne({ crewId: crew.crewId });
       return message.reply(`**${crew.name}** has been disbanded.`);

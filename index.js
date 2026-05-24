@@ -217,7 +217,7 @@ async function main() {
       if (interaction.isButton()) {
         // guard against multiple button presses while we are handling one
         if (processingInteractions.has(interaction.user.id)) {
-          return interaction.reply({ content: 'Please wait for the previous action to finish.', ephemeral: true });
+          return await interaction.reply({ content: 'Please wait for the previous action to finish.', ephemeral: true });
         }
         processingInteractions.add(interaction.user.id);
       }
@@ -225,81 +225,81 @@ async function main() {
       if (interaction.isModalSubmit()) {
         const [action] = interaction.customId.split(':');
         if (action === 'market_search_modal') {
-          return marketCmd.handleModal(interaction);
+          return await marketCmd.handleModal(interaction);
         }
         if (action === 'guildlist_goto_modal') {
-          return require('./commands/owner').handleModal(interaction);
+          return await require('./commands/owner').handleModal(interaction);
         }
         if (action === 'gamble_roul_lucky') {
-          return gambleCmd.handleRouletteModal(interaction);
+          return await gambleCmd.handleRouletteModal(interaction);
         }
       }
 
       if (interaction.isStringSelectMenu()) {
         const [action] = interaction.customId.split(':');
         if (action === 'collection_sort_select') {
-          return require('./commands/collection').handleButton(interaction, interaction.customId);
+          return await require('./commands/collection').handleButton(interaction, interaction.customId);
         }
         if (action === 'guildlist_filter') {
-          return require('./commands/owner').handleSelect(interaction);
+          return await require('./commands/owner').handleSelect(interaction);
         }
         if (action === 'help_category') {
-          return require('./commands/help').handleCategorySelect(interaction);
+          return await require('./commands/help').handleCategorySelect(interaction);
         }
         if (action === 'trivia_diff') {
-          return triviaCmd.handleDifficultySelect(interaction);
+          return await triviaCmd.handleDifficultySelect(interaction);
         }
         if (action === 'gamble_game' || action === 'gamble_bet' || action === 'gamble_roul') {
-          return gambleCmd.handleSelect(interaction);
+          return await gambleCmd.handleSelect(interaction);
         }
         if (action === 'sail_select') {
-          return require('./commands/sail').handleSelect(interaction);
+          return await require('./commands/sail').handleSelect(interaction);
         }
         if (action === 'market_rank' || action === 'market_attr' || action === 'market_star' || action === 'market_buy') {
-          return marketCmd.handleSelect(interaction);
+          return await marketCmd.handleSelect(interaction);
         }
         if (action === 'marketcancel') {
-          return marketListingsCmd.handleSelect(interaction);
+          return await marketListingsCmd.handleSelect(interaction);
         }
       }
 
       if (interaction.isChatInputCommand()) {
         const { commandName } = interaction;
-        if (commandName === 'start') return startCmd.execute({ interaction });
-        if (commandName === 'pull') return pullCmd.execute({ interaction });
-        if (commandName === 'reset') return resetCmd.execute({ interaction });
-        if (commandName === 'autoteam') return autoTeamCmd.execute({ interaction });
-        if (commandName === 'team') return teamCmd.execute({ interaction });
-        if (commandName === 'teambackground') return teamBackgroundCmd.execute({ interaction });
-        if (commandName === 'inventory') return inventoryCmd.execute({ interaction });
-        if (commandName === 'duel') return duelCmd.execute({ interaction });
-        if (commandName === 'sell') return sellCmd.execute({ interaction });
-        if (commandName === 'shop') return shopCmd.execute({ interaction });
-        if (commandName === 'buy') return buyCmd.execute({ interaction });
-        if (commandName === 'bet') return betCmd.execute({ interaction });
-        if (commandName === 'gamble') return gambleCmd.execute({ interaction });
-        if (commandName === 'trivia') return triviaCmd.execute({ interaction });
-        if (commandName === 'bounty') return bountyCmd.execute({ interaction });
-        if (commandName === 'user') return userCmd.execute({ interaction });
-        if (commandName === 'leaderboard') return leaderboardCmd.execute({ interaction });
-        if (commandName === 'daily') return dailyCmd.execute({ interaction });
-        if (commandName === 'vote') return voteCmd.execute({ interaction });
-        if (commandName === 'stock') return stockCmd.execute({ interaction });
-        if (commandName === 'open') return openCmd.execute({ interaction });
-        if (commandName === 'trade') return tradeCmd.execute({ interaction });
-        if (commandName === 'claim') return claimCmd.execute({ interaction });
-        if (commandName === 'bulksell') return bulksellCmd.execute({ interaction });
-        if (commandName === 'rob') return robCmd.execute({ interaction });
-        if (commandName === 'stoprob') return stopRobCmd.execute({ interaction });
-        if (commandName === 'loot') return lootCmd.execute({ interaction });
-        if (commandName === 'timers') return timersCmd.execute({ interaction });
-        if (commandName === 'info') return require('./commands/info').execute({ interaction });
-        if (commandName === 'tutorial') return require('./commands/tutorial').execute({ interaction });
-        if (commandName === 'setship') return setShipCmd.execute({ interaction });
-        if (commandName === 'deposit') return depositCmd.execute({ interaction });
-        if (commandName === 'card') return require('./commands/card').execute({ interaction });
-        if (commandName === 'upgrade') return require('./commands/upgrade').execute({ interaction });
-        if (commandName === 'forfeit') return forfeitCmd.execute({ interaction });
+        if (commandName === 'start') return await startCmd.execute({ interaction });
+        if (commandName === 'pull') return await pullCmd.execute({ interaction });
+        if (commandName === 'reset') return await resetCmd.execute({ interaction });
+        if (commandName === 'autoteam') return await autoTeamCmd.execute({ interaction });
+        if (commandName === 'team') return await teamCmd.execute({ interaction });
+        if (commandName === 'teambackground') return await teamBackgroundCmd.execute({ interaction });
+        if (commandName === 'inventory') return await inventoryCmd.execute({ interaction });
+        if (commandName === 'duel') return await duelCmd.execute({ interaction });
+        if (commandName === 'sell') return await sellCmd.execute({ interaction });
+        if (commandName === 'shop') return await shopCmd.execute({ interaction });
+        if (commandName === 'buy') return await buyCmd.execute({ interaction });
+        if (commandName === 'bet') return await betCmd.execute({ interaction });
+        if (commandName === 'gamble') return await gambleCmd.execute({ interaction });
+        if (commandName === 'trivia') return await triviaCmd.execute({ interaction });
+        if (commandName === 'bounty') return await bountyCmd.execute({ interaction });
+        if (commandName === 'user') return await userCmd.execute({ interaction });
+        if (commandName === 'leaderboard') return await leaderboardCmd.execute({ interaction });
+        if (commandName === 'daily') return await dailyCmd.execute({ interaction });
+        if (commandName === 'vote') return await voteCmd.execute({ interaction });
+        if (commandName === 'stock') return await stockCmd.execute({ interaction });
+        if (commandName === 'open') return await openCmd.execute({ interaction });
+        if (commandName === 'trade') return await tradeCmd.execute({ interaction });
+        if (commandName === 'claim') return await claimCmd.execute({ interaction });
+        if (commandName === 'bulksell') return await bulksellCmd.execute({ interaction });
+        if (commandName === 'rob') return await robCmd.execute({ interaction });
+        if (commandName === 'stoprob') return await stopRobCmd.execute({ interaction });
+        if (commandName === 'loot') return await lootCmd.execute({ interaction });
+        if (commandName === 'timers') return await timersCmd.execute({ interaction });
+        if (commandName === 'info') return await require('./commands/info').execute({ interaction });
+        if (commandName === 'tutorial') return await require('./commands/tutorial').execute({ interaction });
+        if (commandName === 'setship') return await setShipCmd.execute({ interaction });
+        if (commandName === 'deposit') return await depositCmd.execute({ interaction });
+        if (commandName === 'card') return await require('./commands/card').execute({ interaction });
+        if (commandName === 'upgrade') return await require('./commands/upgrade').execute({ interaction });
+        if (commandName === 'forfeit') return await forfeitCmd.execute({ interaction });
         // `/isail` command disabled; use the Sail menu to access Infinite Sail (Navy base)
         if (commandName === 'sail') return require('./commands/sail').execute({ interaction });
         if (commandName === 'fuel') return require('./commands/fuel').execute({ interaction });
@@ -315,14 +315,14 @@ async function main() {
         
         // handle help back button
         if (action === 'help_back') {
-          return require('./commands/help').handleBack(interaction);
+          return await require('./commands/help').handleBack(interaction);
         }
         // handle tutorial run button (from start prompt) or navigation
         if (action === 'tutorial_run') {
-          return require('./commands/tutorial').execute({ interaction });
+          return await require('./commands/tutorial').execute({ interaction });
         }
         if (action && (action.startsWith('tutorial_nav') || action === 'tutorial_about')) {
-          return require('./commands/tutorial').handleButton(interaction, interaction.customId);
+          return await require('./commands/tutorial').handleButton(interaction, interaction.customId);
         }
         
         // existing card pager buttons
@@ -377,100 +377,100 @@ async function main() {
             }
           }
           // use safeUpdate to avoid throwing on expired/unknown interactions
-          if (global && typeof global.safeUpdate === 'function') return global.safeUpdate(interaction, { embeds: [embed], components: [row], files });
-          return global.safeUpdate(interaction, { embeds: [embed], components: [row], files });
+          if (global && typeof global.safeUpdate === 'function') return await global.safeUpdate(interaction, { embeds: [embed], components: [row], files });
+          return await global.safeUpdate(interaction, { embeds: [embed], components: [row], files });
         }
 
         // handle reset token confirmation
         if (action === 'reset_confirm') {
-          return resetCmd.handleButton(interaction, interaction.customId.split(':').slice(1).join(':'));
+          return await resetCmd.handleButton(interaction, interaction.customId.split(':').slice(1).join(':'));
         }
 
         // handle infinite sail interactions
         if (action && action.startsWith('isail')) {
-          return require('./commands/isail').handleButton(interaction, action, cardId);
+          return await require('./commands/isail').handleButton(interaction, action, cardId);
         }
         // handle story sail interactions
         if (action && action.startsWith('sail')) {
-          return require('./commands/sail').handleButton(interaction, action, cardId);
+          return await require('./commands/sail').handleButton(interaction, action, cardId);
         }
 
         if (action === 'fish_catch') {
-          return require('./commands/fish').handleCatch(interaction, cardId);
+          return await require('./commands/fish').handleCatch(interaction, cardId);
         }
 
         // handle duel interactions
         if (action && action.startsWith('duel')) {
-          return duelCmd.handleButton(interaction, action, cardId);
+          return await duelCmd.handleButton(interaction, action, cardId);
         }
 
         // handle pack opening interactions
         if (action && action.startsWith('open_next')) {
-          return openCmd.handleButton(interaction, interaction.customId);
+          return await openCmd.handleButton(interaction, interaction.customId);
         }
 
         // handle trade accept/decline buttons
         if (action === 'trade_confirm' || action === 'trade_cancel') {
-          return tradeCmd.handleButton(interaction, interaction.customId);
+          return await tradeCmd.handleButton(interaction, interaction.customId);
         }
 
         // handle stock button purchases
         if (action === 'stock_buy') {
-          return stockCmd.handleButton(interaction, interaction.customId);
+          return await stockCmd.handleButton(interaction, interaction.customId);
         }
 
         // handle stock page navigation
         if (action === 'stock_page') {
-          return stockCmd.handleButton(interaction, interaction.customId);
+          return await stockCmd.handleButton(interaction, interaction.customId);
         }
 
         if (action === 'trivia_answer' || action === 'trivia_continue') {
-          return triviaCmd.handleButton(interaction);
+          return await triviaCmd.handleButton(interaction);
         }
 
         // handle collection navigation and boost
         if (action && (action.startsWith('collection_next') || action.startsWith('collection_prev') || action === 'collection_sort' || action === 'collection_sort_select' || action === 'collection_boost')) {
-          return require('./commands/collection').handleButton(interaction, interaction.customId);
+          return await require('./commands/collection').handleButton(interaction, interaction.customId);
         }
 
         // handle info card navigation
         if (action && action.startsWith('info_')) {
-          return require('./commands/info').handleButton(interaction, action, cardId);
+          return await require('./commands/info').handleButton(interaction, action, cardId);
         }
 
         // handle inventory pagination
         if (action && (action.startsWith('inv_prev') || action.startsWith('inv_next'))) {
-          return require('./commands/inventory').handleButton(interaction, interaction.customId);
+          return await require('./commands/inventory').handleButton(interaction, interaction.customId);
         }
 
         // handle card drop claims
         if (action && action.startsWith('drop_claim')) {
           const dropId = interaction.customId.split(':')[1];
-          return require('./commands/drops').handleDropClaim(interaction, dropId);
+          return await require('./commands/drops').handleDropClaim(interaction, dropId);
         }
 
         // handle balance interactions
         if (action === 'balance') {
-          return require('./commands/balance').handleButton(interaction, cardId);
+          return await require('./commands/balance').handleButton(interaction, cardId);
         }
 
         // handle bounty interactions
         if (action === 'bounty') {
-          return require('./commands/bounty').handleButton(interaction, `${cardId}:${interaction.customId.split(':').slice(2).join(':')}`);
+          return await require('./commands/bounty').handleButton(interaction, `${cardId}:${interaction.customId.split(':').slice(2).join(':')}`);
         }
 
         // handle team autoteam
         if (action === 'team_autoteam') {
-          return require('./commands/team').handleButton(interaction, action, cardId);
+          return await require('./commands/team').handleButton(interaction, action, cardId);
         }
         // handle team ids
         if (action === 'team_ids') {
-          return require('./commands/team').handleButton(interaction, action, cardId);
+          return await require('./commands/team').handleButton(interaction, action, cardId);
         }
 
         if (action && action.startsWith('bulksell_confirm')) {
           const [, token, choice] = interaction.customId.split(':');
-          return bulksellCmd.handleButton(interaction, choice, token);
+          return await bulksellCmd.handleButton(interaction, choice, token);
         }
 
         // handle owner buttons (reset-all confirmation, guildlist pagination)

@@ -147,9 +147,9 @@ function buildNavRow(viewerId, targetId, currentPage, totalPages, category) {
 
 function buildCategoryDropdown(viewerId, targetId, category) {
   const cats = [
-    { value: 'items', label: '📦 Items', description: 'View your regular items' },
-    { value: 'levelers', label: '🔺 Levelers', description: 'View your leveler items' },
-    { value: 'packs', label: '🗂️ Packs', description: 'View your card packs' }
+    { value: 'items', label: '<:PurpleShard:1494106958582776008> Items', description: 'View your regular items' },
+    { value: 'levelers', label: '<:rainbowrobberpenguin:1490356754691784754> Levelers', description: 'View your leveler items' },
+    { value: 'packs', label: '<:CrossGuild:1480010003896340482> Packs', description: 'View your card packs' }
   ];
   return new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()

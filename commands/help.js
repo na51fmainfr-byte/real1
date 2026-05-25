@@ -64,7 +64,6 @@ const COMMAND_CATEGORIES = {
       { name: 'claim [amount]', desc: 'Claim earnings from your active ship' },
       { name: 'rob [@user]', desc: 'Attempt to rob another player' },
       { name: 'loot', desc: 'Attempt to loot a random pirate ship' },
-      { name: 'gamble', desc: 'Lots fun little gambling minigames' }
     ]
   },
   activities: {
@@ -75,6 +74,7 @@ const COMMAND_CATEGORIES = {
       { name: 'feed <query> <item>', desc: 'Feed levelers to a card to level it up' },
       { name: 'trivia [difficulty]', desc: 'Play a trivia quiz to earn rewards' },
       { name: 'trade <cardID>/*beli <cardID>', desc: 'Trade with another user' },
+      { name: 'gamble', desc: 'Lots fun little gambling minigames' }
     ]
   },
   info: {

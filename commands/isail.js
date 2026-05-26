@@ -361,7 +361,17 @@ function getMarinesForLevel(stage, prevRanks = [], userId = null) {
 
   // Randomly determine count: 1, 2, or 3
   const countRoll = rand();
-  const count = countRoll < 0.33 ? 1 : countRoll < 0.66 ? 2 : 3;
+  // Bias multi-enemy groups towards higher stages.
+  // Interpolate probabilities from stage=1 => [1:0.55,2:0.35,3:0.10]
+  // to stage=100 => [1:0.10,2:0.50,3:0.40].
+  const stageNorm = Math.min(Math.max(stage || 1, 1), 100) / 100;
+  const p1 = 0.55 - 0.45 * stageNorm;
+  const p2 = 0.35 + 0.15 * stageNorm;
+  const p3 = 0.10 + 0.30 * stageNorm;
+  let count;
+  if (countRoll < p1) count = 1;
+  else if (countRoll < p1 + p2) count = 2;
+  else count = 3;
 
   const group = [];
   for (let i = 0; i < count; i++) {
@@ -391,7 +401,8 @@ function getMarinesForLevel(stage, prevRanks = [], userId = null) {
   const hpMultiplier = groupLen === 1 ? 3 : groupLen === 2 ? 2 : 1;
   group.forEach(m => {
     m.maxHP = Math.max(1, Math.floor((m.maxHP || 1) * hpMultiplier));
-    m.currentHP = typeof m.currentHP === 'number' ? m.currentHP : m.maxHP;
+    // Freshly generated marines should start at full HP (currentHP = maxHP)
+    m.currentHP = m.maxHP;
   });
 
   return group;

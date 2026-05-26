@@ -42,6 +42,8 @@ async function processVote(voterId) {
   user.voteStreak = (user.voteStreak || 0) + 1;
   user.totalVotes = (user.totalVotes || 0) + 1;
   user.lastVoted = now;
+  // Schedule a vote reminder DM 12 hours from now
+  user.nextVoteReminder = new Date(now.getTime() + 12 * 60 * 60 * 1000);
 
   // Reward: 1 reset token
   user.resetTokens = (user.resetTokens || 0) + 1;

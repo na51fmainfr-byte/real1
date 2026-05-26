@@ -59,6 +59,8 @@ const UserSchema = new Schema({
   dailyStreak: { type: Number, default: 0 },
   // next scheduled DM reminder for daily (set when user claims daily)
   nextDailyReminder: { type: Date, default: null },
+  // next scheduled DM reminder for vote (set 12h after voting)
+  nextVoteReminder: { type: Date, default: null },
   // duel rate limiting: number of duels used today and the reset timestamp
   dailyDuels: { type: Number, default: 0 },
   dailyDuelsReset: { type: Date, default: null },

@@ -175,16 +175,16 @@ function crashCurrentMult(startTime) {
 }
 
 // Towers
-const TOWER_PAYOUTS = [1.3, 1.7, 2.3, 3.2, 5.0];
+const TOWER_PAYOUTS = [1.3, 1.6, 2.0, 2.5, 3.0];
 
 // Scratch prizes (will be scaled by bet/100)
-// Scratch multipliers (applied to bet): 0.25x min, 2.5x max, ~60% win chance
-const SCRATCH_MULTIPLIERS = [0.25, 0.5, 1.0, 1.5, 2.5];
+// Scratch multipliers (applied to bet): 0.25x min, 1.5x max, ~50% win chance
+const SCRATCH_MULTIPLIERS = [0.25, 0.5, 0.75, 1.0, 1.5];
 
 function buildScratchGrid(bet) {
   const mults = SCRATCH_MULTIPLIERS;
   let tiles;
-  if (Math.random() < 0.60) {
+  if (Math.random() < 0.50) {
     // Win round: guarantee at least a pair of one multiplier
     const winIdx = Math.floor(Math.random() * mults.length);
     const winVal = Math.round(mults[winIdx] * bet);
@@ -960,9 +960,9 @@ async function startSlots(interaction, session) {
   const rand = Math.random() * 100;
   let outcome;
   if (rand < 2) outcome = 'jackpot';       // 2%: 3x same card  → ×3
-  else if (rand < 7) outcome = 'attr3';    // 5%: 3x same attr  → ×2
-  else if (rand < 42) outcome = 'attr2';   // 35%: 2x same attr → ×1.5
-  else outcome = 'none';                   // 58%: no match     → ×0
+  else if (rand < 10) outcome = 'attr3';   // 8%: 3x same attr  → ×2
+  else if (rand < 50) outcome = 'attr2';   // 40%: 2x same attr → ×1.5
+  else outcome = 'none';                   // 50%: no match     → ×0
 
   const reels = [];
   const pick = arr => arr[Math.floor(Math.random() * arr.length)];
@@ -1312,7 +1312,7 @@ async function handleRouletteSpin(interaction, session, betType) {
 
   if (betType === 'red' && isRed) { won = true; payoutMult = 2; }
   else if (betType === 'black' && isBlack) { won = true; payoutMult = 2; }
-  else if (betType === 'green' && isGreen) { won = true; payoutMult = 18; }
+  else if (betType === 'green' && isGreen) { won = true; payoutMult = 3; }
   else if (typeof betType === 'string' && betType.startsWith('lucky')) {
     const parts = betType.split(':');
     if (parts.length > 1) {
@@ -1320,7 +1320,7 @@ async function handleRouletteSpin(interaction, session, betType) {
       if (!isNaN(parsed) && parsed >= 0 && parsed <= 36) luckyNum = parsed;
     }
     if (luckyNum === null) luckyNum = Math.floor(Math.random() * 37);
-    if (luckyNum === number) { won = true; payoutMult = 36; }
+    if (luckyNum === number) { won = true; payoutMult = 3; }
   }
 
   let rouProfit = 0;
@@ -1380,7 +1380,8 @@ async function handleCrashButton(interaction, session) {
     return interaction.editReply({ embeds: [embed], components: [], files: [att] });
   }
 
-  const crashProfit = Math.floor(session.bet * (currentMult - 1) * session.namiMultiplier);
+  const cappedMult = Math.min(3.0, currentMult);
+  const crashProfit = Math.floor(session.bet * (cappedMult - 1) * session.namiMultiplier);
   await User.updateOne({ userId: session.userId }, { $inc: { balance: crashProfit } });
   await setCooldown(session.userId);
   gambleSessions.delete(session.userId);
@@ -1391,7 +1392,7 @@ async function handleCrashButton(interaction, session) {
     }
   } catch (e) {}
 
-  const buf = renderCrashCanvas(currentMult, false, currentMult);
+  const buf = renderCrashCanvas(cappedMult, false, cappedMult);
   const att = new AttachmentBuilder(buf, { name: 'crash.png' });
   let namiBoostLine = '';
   if (crashProfit > 0 && session.namiMultiplier && session.namiMultiplier > 1) {
@@ -1401,7 +1402,7 @@ async function handleCrashButton(interaction, session) {
   const embed = new EmbedBuilder()
     .setColor('#23272a')
     .setTitle(`${GAME_EMOJIS.crash} Crash`)
-    .setDescription(`**Bet:** ${formatBeli(session.bet)}\n\n**Cashed out at ${currentMult.toFixed(2)}×!**\n**Won ${formatBeli(crashProfit)}!**${namiBoostLine}`)
+    .setDescription(`**Bet:** ${formatBeli(session.bet)}\n\n**Cashed out at ${cappedMult.toFixed(2)}×!**\n**Won ${formatBeli(crashProfit)}!**${namiBoostLine}`)
     .setImage('attachment://crash.png');
   return interaction.editReply({ embeds: [embed], components: [], files: [att] });
 }

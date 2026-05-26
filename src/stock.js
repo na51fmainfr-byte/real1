@@ -216,13 +216,25 @@ async function resetPullCounter() {
       if (globalClient) {
         const { getBotConfig } = require('../models/BotConfig');
         const resetsChannel = await getBotConfig('resetsChannel');
+        console.log(`[reset-notify] resetsChannel from DB: ${resetsChannel || 'not configured'}`);
         if (resetsChannel) {
-          const ch = await globalClient.channels.fetch(resetsChannel).catch(() => null);
+          const ch = await globalClient.channels.fetch(resetsChannel).catch((e) => {
+            console.error(`[reset-notify] Failed to fetch channel ${resetsChannel}:`, e.message);
+            return null;
+          });
           if (ch) {
             const roleMention = '<@&1389619213492158464>';
-            ch.send(`${roleMention} Pulls have been reset! you can start pulling in command channels.`).catch(() => {});
+            ch.send(`${roleMention} Pulls have been reset! you can start pulling in command channels.`)
+              .then(() => console.log(`[reset-notify] Reset message sent successfully to #${ch.name} (${resetsChannel})`))
+              .catch((e) => console.error(`[reset-notify] Failed to send reset message to ${resetsChannel}:`, e.message));
+          } else {
+            console.warn(`[reset-notify] Channel ${resetsChannel} could not be fetched — message not sent`);
           }
+        } else {
+          console.log('[reset-notify] No resetsChannel configured — skipping notification');
         }
+      } else {
+        console.warn('[reset-notify] Discord client not attached — skipping notification');
       }
     } catch (err2) {
       console.error('Error sending pull reset notification:', err2);

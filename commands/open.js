@@ -288,14 +288,21 @@ module.exports = {
       const normalized = normalizeName(name);
       return normalized.includes('strawhat') && normalized.includes('pirates');
     };
+    const isFakeStrawhatPack = name => {
+      const normalized = normalizeName(name);
+      return normalized.includes('fake') && normalized.includes('strawhat');
+    };
     const normalizedPack = normalizeName(matchedPack);
 
-    // Require at least 20 pullable cards in this pack's faculty before allowing opens
-    const packCardPoolCheck = cards.filter(c => c.pullable && !c.artifact && !c.ship && normalizeName(c.faculty) === normalizedPack);
-    if (packCardPoolCheck.length < 20) {
-      const reply = `The **${matchedPack}** pack is not yet complete — it needs at least 20 cards before it can be opened!`;
-      if (message) return message.reply(reply);
-      return interaction.reply({ content: reply, ephemeral: true });
+    // Fake Straw-Hat Crew pack: artifacts only — skip the 20-card requirement
+    if (!isFakeStrawhatPack(matchedPack)) {
+      // Require at least 20 pullable cards in this pack's faculty before allowing opens
+      const packCardPoolCheck = cards.filter(c => c.pullable && !c.artifact && !c.ship && normalizeName(c.faculty) === normalizedPack);
+      if (packCardPoolCheck.length < 20) {
+        const reply = `The **${matchedPack}** pack is not yet complete — it needs at least 20 cards before it can be opened!`;
+        if (message) return message.reply(reply);
+        return interaction.reply({ content: reply, ephemeral: true });
+      }
     }
 
     // Build pools for this pack faculty
@@ -304,6 +311,18 @@ module.exports = {
       artifactCandidates = cards.filter(c => c.artifact && normalizeName(c.faculty).includes('strawhat'));
     }
     let shipCandidates = cards.filter(c => c.ship && c.pullable && normalizeName(c.faculty) === normalizedPack);
+
+    // Fake Straw-Hat Crew: artifacts-only pack — override pools to Strawhat Pirates artifacts
+    const fakeStrawhat = isFakeStrawhatPack(matchedPack);
+    if (fakeStrawhat) {
+      artifactCandidates = cards.filter(c => c.artifact && c.pullable && normalizeName(c.faculty).includes('strawhat'));
+      shipCandidates = [];
+      if (!artifactCandidates.length) {
+        const reply = `The **${matchedPack}** pack has no Strawhat artifacts available yet.`;
+        if (message) return message.reply(reply);
+        return interaction.reply({ content: reply, ephemeral: true });
+      }
+    }
 
     // Do NOT fallback to global artifact/ship pools. Keep faculty-specific candidates only.
     // If this pack has no artifacts or ships defined, the first card will fall back to a normal card.
@@ -349,7 +368,8 @@ module.exports = {
     const pulledCards = [];
 
     // Determine first card: ALWAYS artifact (80%) or ship (20%)
-    let firstCategory = Math.random() < 0.8 ? 'artifact' : 'ship';
+    // For Fake Straw-Hat pack: always artifact
+    let firstCategory = fakeStrawhat ? 'artifact' : (Math.random() < 0.8 ? 'artifact' : 'ship');
     // If chosen category has no candidates, try the other; if still none, fallback to card
     if (firstCategory === 'artifact' && !artifactCandidates.length) {
       firstCategory = shipCandidates.length ? 'ship' : 'card';
@@ -383,9 +403,9 @@ module.exports = {
         }
       } else if (i === 4) {
         // Last card: guaranteed S+ (ship/artifact -> Guaranteed S; card -> 90% S, 8% SS, 2% UR)
-        // First choose category by 97/2/1 weights (cards/artifact/ship)
+        // For Fake Straw-Hat pack: always artifact; otherwise choose by 97/2/1 weights
         const r = Math.random() * 100;
-        let cat = r < 97 ? 'card' : (r < 99 ? 'artifact' : 'ship');
+        let cat = fakeStrawhat ? 'artifact' : (r < 97 ? 'card' : (r < 99 ? 'artifact' : 'ship'));
         // if chosen category empty, fallback to next available
         if (cat === 'artifact' && !artifactCandidates.length) cat = shipCandidates.length ? 'ship' : 'card';
         if (cat === 'ship' && !shipCandidates.length) cat = artifactCandidates.length ? 'artifact' : 'card';
@@ -431,8 +451,9 @@ module.exports = {
         }
       } else {
         // Middle cards: choose category by 97% card, 2% artifact, 1% ship
+        // For Fake Straw-Hat pack: always artifact
         const r = Math.random() * 100;
-        let cat = r < 97 ? 'card' : (r < 99 ? 'artifact' : 'ship');
+        let cat = fakeStrawhat ? 'artifact' : (r < 97 ? 'card' : (r < 99 ? 'artifact' : 'ship'));
         if (cat === 'artifact' && !artifactCandidates.length) cat = 'card';
         if (cat === 'ship' && !shipCandidates.length) cat = 'card';
 

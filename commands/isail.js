@@ -356,21 +356,43 @@ function energyDisplay(energy) {
 }
 
 // return an array of marine objects for the given progress level
-function getMarinesForLevel(stage, prevRanks = []) {
+// Simple seeded PRNG (LCG) for reproducible stage generation
+function makeSeed(userId, stage) {
+  let h = 0;
+  const str = `${userId}:${stage}`;
+  for (let i = 0; i < str.length; i++) {
+    h = Math.imul(31, h) + str.charCodeAt(i) | 0;
+  }
+  return (h >>> 0);
+}
+
+function seededRng(seed) {
+  let s = seed >>> 0;
+  return function() {
+    s = (Math.imul(1664525, s) + 1013904223) >>> 0;
+    return s / 0xffffffff;
+  };
+}
+
+function getMarinesForLevel(stage, prevRanks = [], userId = null) {
   // Filter eligible ranks based on stagerange
   const eligible = marines.filter(m => stage >= m.stagerange[0] && stage <= m.stagerange[1]);
   if (eligible.length === 0) return [];
 
+  // Use seeded RNG when userId provided so the same stage always gives the same marines
+  const rand = userId ? seededRng(makeSeed(userId, stage)) : Math.random.bind(Math);
+
   // Randomly determine count: 1, 2, or 3
-  const count = randomInt(1, 3);
+  const countRoll = rand();
+  const count = countRoll < 0.33 ? 1 : countRoll < 0.66 ? 2 : 3;
 
   const group = [];
   for (let i = 0; i < count; i++) {
     // Randomly select from eligible ranks
-    const c = eligible[Math.floor(Math.random() * eligible.length)];
+    const c = eligible[Math.floor(rand() * eligible.length)];
     const rank = c.rank;
     const pool = c.pool || [];
-    const poolEntry = pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : { emoji: '', attribute: 'STR' };
+    const poolEntry = pool.length > 0 ? pool[Math.floor(rand() * pool.length)] : { emoji: '', attribute: 'STR' };
     const emoji = poolEntry.emoji;
     const attribute = poolEntry.attribute;
     const maxHP = marines.getRandomMarineHP(c.rank, stage);
@@ -1528,7 +1550,7 @@ module.exports = {
 
     const state = {
       userId,
-      marines: getMarinesForLevel(user.isailProgress),
+      marines: getMarinesForLevel(user.isailProgress, [], userId),
       cards: resolvedTeam,
       turn: null,
       startingPlayer: null, // will set below

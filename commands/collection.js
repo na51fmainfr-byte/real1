@@ -329,8 +329,7 @@ module.exports = {
     }
 
     if (action === 'collection_sort') {
-      if (global && typeof global.safeUpdate === 'function') return global.safeUpdate(interaction, { content: 'Choose sort/filter option:', components: [makeSortMenu(uid)] });
-      return global.safeUpdate(interaction, { content: 'Choose sort/filter option:', components: [makeSortMenu(uid)] });
+      return global.safeUpdate(interaction, { content: 'Choose sort/filter option:', embeds: [], files: [], components: [makeSortMenu(uid)] });
     }
 
     if (action === 'collection_sort_select') {
@@ -341,11 +340,15 @@ module.exports = {
       session.mode = mode;
 
       if (!filtered.length) {
-        if (global && typeof global.safeUpdate === 'function') return global.safeUpdate(interaction, { content: 'No cards match that filter.', embeds: [], components: [] });
-        return global.safeUpdate(interaction, { content: 'No cards match that filter.', embeds: [], components: [] });
+        return global.safeUpdate(interaction, { content: 'No cards match that filter.', embeds: [], files: [], components: [] });
       }
 
-      return renderCard(interaction, session, 0);
+      try {
+        return await renderCard(interaction, session, 0);
+      } catch (err) {
+        console.error('renderCard error after sort:', err);
+        return global.safeUpdate(interaction, { content: 'Failed to render card. Please try again.', embeds: [], files: [], components: [] });
+      }
     }
 
     if (action === 'collection_boost') {

@@ -457,15 +457,20 @@ async function updateDuelMessage(msg, state) {
 
   if (state.finished) {
     components.forEach(r => r.components.forEach(b => b.setDisabled(true)));
-  }
-
-  await msg.edit({ embeds: [embed], components });
-
-  if (state.finished) {
+    await msg.edit({ embeds: [embed], components });
     clearDuelTimeout(state);
-  } else {
-    setupTimeout(state, msg);
+    return;
   }
+
+  // Send a new message each turn so players always see the latest embed.
+  // Disable buttons on the old message to prevent stale button clicks.
+  try { await msg.edit({ components: [] }); } catch (e) {}
+  const newMsg = await msg.channel.send({ embeds: [embed], components });
+  // Remap the duelStates entry to the new message ID
+  duelStates.delete(msg.id);
+  duelStates.set(newMsg.id, state);
+  state.lastMsg = newMsg;
+  setupTimeout(state, newMsg);
 }
 
 function rechargeEnergy(state) {
@@ -505,7 +510,8 @@ function setupTimeout(state, msg) {
   if (!state.finished) {
     state.timeout = setTimeout(async () => {
       try {
-        if (!duelStates.has(msg.id)) return;
+        const currentMsg = state.lastMsg || msg;
+        if (!duelStates.has(currentMsg.id)) return;
         if (state.finished) return;
         const timedOutTeam = state.turn === 'player1' ? state.player1Cards : state.player2Cards;
         const timedOutUsername = state.turn === 'player1' ? state.discordUser1.username : state.discordUser2.username;
@@ -520,7 +526,7 @@ function setupTimeout(state, msg) {
         else state.lastP2Action = actionText;
         appendLog(state, `${timedOutUsername} took too long. Turn passed.`);
         try {
-          await finalizeAction(state, msg, true);
+          await finalizeAction(state, state.lastMsg || msg, true);
         } catch (e) {
           console.error('Timeout error:', e);
         }
@@ -604,7 +610,8 @@ async function finalizeAction(state, msg, timedOut = false, appliedCut = false) 
     if (state.isBountyDuel && winnerId === state.bountyHunter) {
       const targetBounty = loserUser.bounty || 100;
       xpGain = 0;
-      const winnerAllowed = !state.rewardsAllowed || !!state.rewardsAllowed[winnerId];
+      // Bounty duel rewards are always granted regardless of daily duel limit
+      const winnerAllowed = true;
       if (winnerAllowed) {
         // Award 5% (1/20) of the target's bounty to the hunter's bounty total
         const bountyGain = Math.floor(targetBounty * 0.05);
@@ -842,12 +849,13 @@ async function finalizeAction(state, msg, timedOut = false, appliedCut = false) 
         .setAuthor({ name: state.discordUser1.username, iconURL: state.discordUser1.displayAvatarURL() });
 
       clearDuelTimeout(state);
+      const latestMsg = state.lastMsg || msg;
       try {
-        await msg.edit({ embeds: [victorEmbed], components: [] });
+        await latestMsg.edit({ embeds: [victorEmbed], components: [] });
       } catch (e) {
-        try { await msg.channel.send({ embeds: [victorEmbed] }); } catch {}
+        try { await latestMsg.channel.send({ embeds: [victorEmbed] }); } catch {}
       }
-      duelStates.delete(msg.id);
+      duelStates.delete(latestMsg.id);
       return;
     }
 
@@ -1206,6 +1214,7 @@ module.exports = {
         
         try { await interaction.message.delete(); } catch {}
         const battleMsg = await interaction.channel.send({ embeds: [embed], components: [row] });
+        state.lastMsg = battleMsg;
         duelStates.set(battleMsg.id, state);
         pendingDuelRequests.delete(msgId);
         await setupTimeout(state, battleMsg);

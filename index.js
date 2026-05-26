@@ -206,6 +206,34 @@ async function main() {
         console.error('Daily reminder check failed', err);
       }
     }, 60 * 1000);
+
+    // vote reminder checker (runs every 5 minutes)
+    setInterval(async () => {
+      try {
+        const now = new Date();
+        const voteUsers = await User.find({ nextVoteReminder: { $lte: now } });
+        for (const u of voteUsers) {
+          try {
+            const discordUser = await client.users.fetch(u.userId).catch(() => null);
+            if (discordUser) {
+              const embed = new EmbedBuilder()
+                .setColor('#FFFFFF')
+                .setTitle('Vote is ready!')
+                .setDescription(`Hey **${discordUser.username}**, 12 hours have passed — you can vote for the bot again on top.gg and earn rewards!`)
+                .setThumbnail(client.user.displayAvatarURL());
+              await discordUser.send({ embeds: [embed] }).catch(() => {});
+            }
+          } catch (err) {
+            console.error('Error sending vote reminder DM', err);
+          } finally {
+            u.nextVoteReminder = null;
+            await u.save().catch(() => {});
+          }
+        }
+      } catch (err) {
+        console.error('Vote reminder check failed', err);
+      }
+    }, 5 * 60 * 1000);
   });
 
   // simple lock to prevent rapid button spam causing race conditions

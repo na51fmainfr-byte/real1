@@ -50,6 +50,7 @@ const marketListingsCmd = require('./commands/marketlistings');
 const marketBuyCmd = require('./commands/marketbuy');
 const crewCmd = require('./commands/crew');
 const raidCmd = require('./commands/raid');
+const raidSpawns = require('./commands/raidspawns');
 const User = require('./models/User');
 const { setBotConfig } = require('./models/BotConfig');
 
@@ -111,6 +112,7 @@ async function main() {
   // Initialize drops system
   const dropsModule = require('./commands/drops');
   dropsModule.initializeDrops(null); // Will be set by client once ready
+  raidSpawns.initializeRaidSpawns(null);
 
   const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.DirectMessages], partials: [] });
 
@@ -173,6 +175,7 @@ async function main() {
       console.error('Error during startup logging', err);
     }
     await dropsModule.initializeDrops(client); // Initialize with client reference and restore any saved drop channel
+    await raidSpawns.initializeRaidSpawns(client);
     // let stock module know the client so it can post reset notifications
     try { stockModule.setClient(client); } catch (e) {}
     // pass Discord client to vote webhook so it can DM voters
@@ -269,9 +272,12 @@ async function main() {
         if (action === 'duel_strat_modal') {
           return await duelCmd.handleStratModalSubmit(interaction);
         }
-        if (action === 'raid_join_modal') {
-          return await raidCmd.handleJoinModal(interaction);
-        }
+          if (action === 'raid_join_modal') {
+            return await raidCmd.handleJoinModal(interaction);
+          }
+          if (action === 'raidspawn_join_modal') {
+            return await raidSpawns.handleModal(interaction);
+          }
       }
 
       if (interaction.isStringSelectMenu()) {
@@ -297,6 +303,7 @@ async function main() {
         if (action === 'sail_select') {
           return await require('./commands/sail').handleSelect(interaction);
         }
+        
         if (action === 'market_rank' || action === 'market_attr' || action === 'market_star' || action === 'market_buy') {
           return await marketCmd.handleSelect(interaction);
         }
@@ -559,6 +566,11 @@ async function main() {
           return crewCmd.handleButton(interaction, interaction.customId);
         }
 
+        // handle raid buttons
+        if (action === 'raidspawn_join') {
+          const spawnId = interaction.customId.split(':')[1];
+          return await raidSpawns.handleButton(interaction, action, spawnId);
+        }
         // handle raid buttons
         if (action === 'raid_join' || action === 'raid_start' || action === 'raid_action') {
           return raidCmd.handleButton(interaction, interaction.customId);

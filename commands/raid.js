@@ -743,6 +743,80 @@ async function refundGodToken(userId) {
   } catch (e) { console.error('[raid] refund error:', e); }
 }
 
+// Create a raid state from an external spawn (owner doesn't spend a god token)
+async function createRaidFromSpawn(ownerId, ownerUsername, channel, def, crew) {
+  const channelId = channel.id;
+  if (raidStates.has(channelId)) throw new Error('There is already an active raid in this channel.');
+
+  const boss = buildBossFromDef(def);
+  const ownerSolo = false;
+
+  const crewId = crew && crew.crewId ? crew.crewId : null;
+  const crewName = crew && crew.name ? crew.name : (ownerUsername + "'s Crew");
+  const crewMembers = Array.isArray(crew && crew.members) && crew.members.length ? crew.members.slice() : [String(ownerId)];
+  const hostRole = await resolveHostRole(crew || { members: crewMembers }, ownerId).catch(() => ({ emoji: EMOJI.member }));
+
+  const state = {
+    channelId,
+    messageId: null,
+    battleMessageId: null,
+    channel,
+    ownerId: String(ownerId),
+    ownerUsername,
+    crewId,
+    crewName,
+    crewMembers: crewMembers.map(String),
+    hostRoleEmoji: hostRole.emoji || EMOJI.member,
+    phase: 'lobby',
+    boss,
+    players: [],
+    roundQueue: [],
+    roundIndex: 0,
+    finished: false,
+    lastAction: '',
+    startTimeoutId: null,
+    turnTimeoutId: null,
+    inactTimeoutId: null,
+    soloMode: ownerSolo,
+    bossSpecialCounter: 0,
+  };
+
+  raidStates.set(channelId, state);
+
+  try {
+    const msg = await channel.send({ embeds: [buildLobbyEmbed(state)], components: makeLobbyComponents() });
+    state.messageId = msg.id;
+  } catch (e) {
+    // if message send fails, cleanup
+    raidStates.delete(channelId);
+    throw e;
+  }
+
+  // auto-cancel if not enough players join within RAID_TIMEOUT
+  state.startTimeoutId = setTimeout(async () => {
+    const s = raidStates.get(channelId);
+    if (!s || s.phase !== 'lobby') return;
+    const minNeeded = s.soloMode ? 1 : MIN_PLAYERS;
+    if (s.players.length < minNeeded) {
+      try {
+        const emojiId = getEmojiId(s.boss.emoji);
+        const ce = new EmbedBuilder()
+          .setColor('#FFFFFF')
+          .setTitle('**Raid Cancelled**')
+          .setDescription(`Not enough players joined the raid against **${s.boss.name}** (${s.players.length}/${minNeeded} needed).`);
+        if (emojiId) ce.setThumbnail(`https://cdn.discordapp.com/emojis/${emojiId}.png`);
+        const msg = await s.channel.messages.fetch(s.messageId).catch(() => null);
+        if (msg) await msg.edit({ embeds: [ce], components: [] });
+      } catch (_) {}
+      raidStates.delete(channelId);
+      return;
+    }
+    await startRaidBattle(s);
+  }, RAID_TIMEOUT);
+
+  return state;
+}
+
 // ─── Sub-command handlers ─────────────────────────────────────────────────────
 
 async function execBoss(ctx, bossQuery) {
@@ -1063,6 +1137,7 @@ module.exports = {
   },
 
   getRaidState(channelId) { return raidStates.get(channelId); },
+  createRaidFromSpawn,
   toggleRaidSoloMode,
   isRaidSoloMode,
 };

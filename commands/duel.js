@@ -15,7 +15,7 @@ async function safeDefer(interaction) {
 const User = require('../models/User');
 const { cards: cardDefs } = require('../data/cards');
 const { resolveStats } = require('../utils/statResolver');
-const { getEffectDescription, normalizeGifUrl, getCardById, searchCards } = require('../utils/cards');
+const { getEffectDescription, normalizeGifUrl, getCardById, searchCards, normalizeCardId } = require('../utils/cards');
 const { getDamageMultiplier, getAttributeDescription } = require('../utils/attributeSystem');
 const { getNextPullResetDate } = require('../src/stock');
 
@@ -85,12 +85,12 @@ async function findCardInPoolByQuery(query, userId, pool) {
   if (!query || !Array.isArray(pool) || pool.length === 0) return null;
   const q = String(query).trim();
   const ql = q.toLowerCase();
-  const poolIds = new Set((pool || []).map(p => String(p.def.id)));
+  const poolIds = new Set((pool || []).map(p => String(normalizeCardId(p.def.id))));
 
   // direct id match
   try {
     const byId = getCardById(q);
-    if (byId && poolIds.has(byId.id)) return pool.find(p => String(p.def.id) === byId.id);
+    if (byId && poolIds.has(normalizeCardId(byId.id))) return pool.find(p => normalizeCardId(p.def.id) === normalizeCardId(byId.id));
   } catch (e) {}
 
   // Load user to access team/favorites/owned lists
@@ -104,7 +104,7 @@ async function findCardInPoolByQuery(query, userId, pool) {
   try {
     const results = searchCards(q);
     if (results && results.length) {
-      const filtered = results.filter(r => poolIds.has(r.id));
+      const filtered = results.filter(r => poolIds.has(normalizeCardId(r.id)));
       if (filtered.length) {
         // sort by priority: team+owned, fav+owned, owned, else
         filtered.sort((a, b) => {
@@ -118,7 +118,7 @@ async function findCardInPoolByQuery(query, userId, pool) {
           if (sa !== sb) return sa - sb;
           return 0;
         });
-        return pool.find(p => String(p.def.id) === filtered[0].id);
+        return pool.find(p => normalizeCardId(p.def.id) === normalizeCardId(filtered[0].id));
       }
     }
   } catch (e) {}
@@ -1065,6 +1065,10 @@ async function handleStratModalSubmit(interaction) {
   const allowedUserId = expected === 'player1' ? draft.pending.player1Id : draft.pending.player2Id;
   if (interaction.user.id !== allowedUserId) return interaction.reply({ content: 'It is not your pick.', ephemeral: true });
   let chosen = await findCardInPoolByQuery(cardQuery, allowedUserId, pool);
+  // Safety: ensure the chosen card actually belongs to the picker's pool/team
+  if (!chosen || !pool.some(p => normalizeCardId(p.def.id) === normalizeCardId(chosen.def.id))) {
+    return interaction.reply({ content: 'That card is not in your team. Pick a card from your team only.', ephemeral: true });
+  }
   if (!chosen) return interaction.reply({ content: 'No matching card found in your team. Type the character name or ID from your team.', ephemeral: true });
 
   // Prevent duplicate picks within the same player's selections

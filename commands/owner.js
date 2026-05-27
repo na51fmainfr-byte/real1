@@ -75,6 +75,9 @@ async function list({ message }) {
       { name: 'op owner guildlist', value: 'Paginated list of all servers the bot is in, with invite links', inline: false },
       { name: 'op owner resetdata <@user>', value: 'Deletes the user record so they must /start again', inline: false },
       { name: 'op owner setdrops <#channel> <value>', value: 'Enable card drops in a channel and set messages needed per drop (default 100)', inline: false },
+      { name: 'op owner setraids <#channel> <value>', value: 'Enable owner-spawned raids in a channel and set messages needed per spawn (default 200)', inline: false },
+      { name: 'op owner unsetraids <#channel>', value: 'Disable owner-spawned raids in the specified channel', inline: false },
+      { name: 'op owner activeraids', value: 'List active owner-spawned raids and per-channel progress', inline: false },
       { name: 'op owner unsetdrops <#channel>', value: 'Disable card drops in the specified channel', inline: false },
       { name: 'op owner activedrops', value: 'List active drops and per-channel progress (e.g., 37/100)', inline: false },
       { name: 'op owner dropparty <#channel> <amount>', value: 'Spawn <amount> drops immediately in the specified channel', inline: false },
@@ -538,6 +541,35 @@ async function execute({ message, args }) {
     }
   }
 
+  if (sub === 'setraids') {
+    const channelMention = args[1];
+    if (!channelMention) {
+      return message.reply('Usage: op owner setraids <#channel>');
+    }
+
+    const channelMatch = channelMention.match(/<#(\d+)>/);
+    if (!channelMatch) {
+      return message.reply('Invalid channel format. Use: op owner setraids <#channel>');
+    }
+
+    const channelId = channelMatch[1];
+    const valueArg = args[2];
+    let threshold = 200;
+    if (valueArg) {
+      const parsed = parseInt(valueArg, 10);
+      if (isNaN(parsed) || parsed < 1) return message.reply('Invalid raid value. Must be a positive integer.');
+      threshold = parsed;
+    }
+    const raidsModule = require('./raidspawns');
+    try {
+      await raidsModule.startRaidTimer(message.client, channelId, threshold);
+      return message.reply(`Owner raid spawns enabled in <#${channelId}> (threshold: ${threshold})!`);
+    } catch (err) {
+      console.error('Error setting up raid spawns:', err);
+      return message.reply('Failed to set up owner raid spawns. Make sure the bot can access that channel and that it is a text channel.');
+    }
+  }
+
   if (sub === 'setresets' || sub === 'setreset') {
     // syntax: op owner setresets <#channel>
     const channelMention = args[1];
@@ -650,6 +682,8 @@ async function execute({ message, args }) {
     }
   }
 
+  
+
   if (sub === 'togglegamble') {
     const { getBotConfig: _getBC, setBotConfig: _setBC } = require('../models/BotConfig');
     const cur = await _getBC('ownerGambleNoCooldown');
@@ -682,6 +716,22 @@ async function execute({ message, args }) {
     } catch (err) {
       console.error('Error disabling drops for channel:', err);
       return message.reply('Failed to disable drops for that channel.');
+    }
+  }
+
+  if (sub === 'unsetraids') {
+    const channelMention = args[1];
+    if (!channelMention) return message.reply('Usage: op owner unsetraids <#channel>');
+    const channelMatch = channelMention.match(/<#(\d+)>/);
+    if (!channelMatch) return message.reply('Invalid channel format. Use: op owner unsetraids <#channel>');
+    const channelId = channelMatch[1];
+    const raidsModule = require('./raidspawns');
+    try {
+      raidsModule.stopRaidTimer(channelId);
+      return message.reply(`Owner raid spawns disabled in <#${channelId}>.`);
+    } catch (err) {
+      console.error('Error disabling raid spawns for channel:', err);
+      return message.reply('Failed to disable raid spawns for that channel.');
     }
   }
 
@@ -722,6 +772,46 @@ async function execute({ message, args }) {
     } catch (err) {
       console.error('Error fetching active drops:', err);
       return message.reply('Failed to fetch active drops.');
+    }
+  }
+
+  if (sub === 'activeraids') {
+    const raidsModule = require('./raidspawns');
+    try {
+      const status = raidsModule.getRaidStatus();
+      const lines = [];
+      if (status.configured && status.configured.length) {
+        lines.push('Configured raid channels:');
+        for (const ch of status.configured) {
+          const prog = ch.progress || 0;
+          const thresh = ch.threshold || 200;
+          lines.push(`<#${ch.channelId}> — ${prog}/${thresh}`);
+        }
+      } else {
+        lines.push('No configured raid channels.');
+      }
+
+      if (status.actives && status.actives.length) {
+        lines.push('');
+        lines.push('Active owner raids:');
+        for (const a of status.actives) {
+          const secs = Math.ceil((a.expiresIn || 0) / 1000);
+          const mm = Math.floor(secs / 60).toString().padStart(2, '0');
+          const ss = (secs % 60).toString().padStart(2, '0');
+          let link = '';
+          try {
+            const chObj = await message.client.channels.fetch(a.channelId);
+            const guildId = chObj && (chObj.guildId || (chObj.guild && chObj.guild.id));
+            if (guildId) link = ` | message: https://discord.com/channels/${guildId}/${a.channelId}/${a.messageId}`;
+          } catch (e) {}
+          lines.push(`<#${a.channelId}> — ${a.cardName || 'unknown'} (${a.rank || ''}) — expires in ${mm}:${ss}${link}`);
+        }
+      }
+
+      return message.channel.send(lines.join('\n'));
+    } catch (err) {
+      console.error('Error fetching active raids:', err);
+      return message.reply('Failed to fetch active raids.');
     }
   }
 

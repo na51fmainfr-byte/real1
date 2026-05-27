@@ -235,6 +235,36 @@ commands.push({
   ]
 });
 
+// raid command
+commands.push({
+  name: 'raid',
+  description: 'Start or manage a crew boss raid',
+  options: [
+    {
+      name: 'boss',
+      type: 1,
+      description: 'Start a new boss raid (costs 1 God Token)',
+      options: [{ name: 'boss', type: 3, description: 'Boss card name or ID', required: true }]
+    },
+    {
+      name: 'add',
+      type: 1,
+      description: 'Add your card to an active raid lobby',
+      options: [{ name: 'card', type: 3, description: 'Card name or ID', required: true }]
+    },
+    {
+      name: 'remove',
+      type: 1,
+      description: 'Remove yourself from an active raid lobby'
+    },
+    {
+      name: 'start',
+      type: 1,
+      description: 'Force-start the raid early (raid owner only)'
+    }
+  ]
+});
+
 // help command
 commands.push({ name: 'help', description: 'View all available commands organized by category' });
 

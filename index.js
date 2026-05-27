@@ -49,6 +49,7 @@ const marketListCmd = require('./commands/marketlist');
 const marketListingsCmd = require('./commands/marketlistings');
 const marketBuyCmd = require('./commands/marketbuy');
 const crewCmd = require('./commands/crew');
+const raidCmd = require('./commands/raid');
 const User = require('./models/User');
 const { setBotConfig } = require('./models/BotConfig');
 
@@ -344,6 +345,7 @@ async function main() {
         if (commandName === 'unequip') return unequipCmd.execute({ interaction });
         if (commandName === 'help') return require('./commands/help').execute({ interaction });
         if (commandName === 'crew') return crewCmd.execute({ interaction });
+        if (commandName === 'raid') return raidCmd.execute({ interaction });
       }
 
       if (interaction.isButton()) {
@@ -546,6 +548,11 @@ async function main() {
         // handle crew buttons
         if (action && (action === 'crew_create_btn' || action.startsWith('crew_disband') || action.startsWith('crew_invite'))) {
           return crewCmd.handleButton(interaction, interaction.customId);
+        }
+
+        // handle raid buttons
+        if (action === 'raid_start' || action === 'raid_action') {
+          return raidCmd.handleButton(interaction, interaction.customId);
         }
       }
     } catch (err) {

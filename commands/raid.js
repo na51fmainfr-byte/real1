@@ -13,7 +13,6 @@ const {
   hasAttackDisabled,
   getStatusLockReason,
   applyStartOfTurnEffects,
-  applyCardEffect,
   getAttackModifier,
   getDefenseMultiplier,
   getConfusionChance,
@@ -440,11 +439,19 @@ async function startRaidBattle(state) {
 async function processBossAttack(state) {
   const alive = state.players.filter(p => p.card && p.card.alive);
   if (!alive.length) return;
+  // Increment boss special counter and decide whether this attack is special
+  state.bossSpecialCounter = (state.bossSpecialCounter || 0) + 1;
+  const isSpecial = state.bossSpecialCounter % 3 === 0;
 
   const target = alive[randomInt(0, alive.length - 1)];
-  let   atk    = randomInt(state.boss.attack_min, state.boss.attack_max);
+  const atkBase = randomInt(state.boss.attack_min, state.boss.attack_max);
   const atkMod = getAttackModifier(state.boss);   // boss attackdown/up status
-  atk = Math.max(1, Math.floor(atk * atkMod));
+  let atk = Math.max(1, Math.floor(atkBase * atkMod));
+
+  if (isSpecial) {
+    // Special attack: stronger hit (2x attack modifier) and no status effects
+    atk = Math.max(1, Math.floor(atkBase * atkMod * 2));
+  }
 
   const mult = getDamageMultiplier(state.boss.attribute, target.card.def.attribute);
   const dmg  = Math.max(1, Math.floor(atk * mult));
@@ -458,7 +465,11 @@ async function processBossAttack(state) {
 
   const eff = mult > 1 ? ' (Effective!)' : mult < 1 ? ' (Weak)' : '';
   const ko  = !target.card.alive ? ` **${target.card.displayDef.character} is KO'd!**` : '';
-  state.lastAction = `${state.boss.emoji || '⚔️'} **${state.boss.name}** strikes **${target.username}**'s ${target.card.displayDef.character} for **${dmg} DMG**${eff}!${ko}`;
+  if (isSpecial) {
+    state.lastAction = `${state.boss.emoji || '⚔️'} **${state.boss.name}** unleashes a **special attack** on **${target.username}**'s ${target.card.displayDef.character} for **${dmg} DMG**${eff}!${ko}`;
+  } else {
+    state.lastAction = `${state.boss.emoji || '⚔️'} **${state.boss.name}** strikes **${target.username}**'s ${target.card.displayDef.character} for **${dmg} DMG**${eff}!${ko}`;
+  }
 }
 
 function rechargeAlivePlayers(state) {
@@ -600,13 +611,9 @@ function executePlayerAttack(card, action, boss, allPlayerCards) {
 
   const eff = attrMult > 1 ? ' (Effective!)' : attrMult < 1 ? ' (Weak)' : '';
 
-  // ── Card effect on special (star-level gated via buildBattleDef) ──────────
+  // ── Card effect on special (star-level gated via buildBattleDef)
+  // In raids, special attacks do damage but DO NOT inflict status conditions.
   const effectLogs = [];
-  if (action === 'special' && card.def.effect) {
-    const ctx = { playerTeam: allPlayerCards, opponentTeam: [boss] };
-    const el  = applyCardEffect(card, boss, ctx);
-    if (el && el.length) effectLogs.push(...el);
-  }
 
   return { ok: true, dmg, eff, effectLogs, logs, victory };
 }
@@ -641,10 +648,10 @@ async function handleVictory(state) {
 
   for (const p of state.players) {
     try {
-      const user = await User.findOne({ userId: p.userId });
+      const user = await User.findOne({ userId: String(p.userId) });
       if (!user) continue;
       user.balance = (user.balance || 0) + beli;
-      const owned = user.ownedCards.find(e => e.cardId === cardId);
+      const owned = (user.ownedCards || []).find(e => String(e.cardId) === String(cardId));
       if (!owned) {
         user.ownedCards.push({ cardId, level: 1, xp: 0, starLevel: 0 });
         lines.push(`- **${p.username}**: received **${state.boss.name}** card + **${beli.toLocaleString()} Beli**`);
@@ -785,6 +792,7 @@ async function execBoss(ctx, bossQuery) {
     finished: false, lastAction: '', startTimeoutId: null,
     turnTimeoutId: null, inactTimeoutId: null,
     soloMode: ownerSolo,
+    bossSpecialCounter: 0,
   };
 
   raidStates.set(channelId, state);
@@ -855,9 +863,9 @@ async function execForceStart(ctx) {
   if (state.players.length === 0)        return reply(ctx, 'No players have joined yet!');
   if (state.startTimeoutId) { clearTimeout(state.startTimeoutId); state.startTimeoutId = null; }
   if (ctx.interaction) {
-    await ctx.interaction.reply({ content: '⚔️ Starting the raid!', ephemeral: true });
+    await ctx.interaction.reply({ content: 'Starting the raid!', ephemeral: true });
   } else {
-    await ctx.channel.send('⚔️ Starting the raid!');
+    await ctx.channel.send('Starting the raid!');
   }
   await startRaidBattle(state);
 }

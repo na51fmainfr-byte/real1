@@ -266,6 +266,9 @@ async function main() {
         if (action === 'crew_create_modal') {
           return await crewCmd.handleModal(interaction);
         }
+        if (action === 'duel_strat_modal') {
+          return await duelCmd.handleStratModalSubmit(interaction);
+        }
         if (action === 'raid_join_modal') {
           return await raidCmd.handleJoinModal(interaction);
         }
@@ -275,6 +278,9 @@ async function main() {
         const [action] = interaction.customId.split(':');
         if (action === 'collection_sort_select') {
           return await require('./commands/collection').handleButton(interaction, interaction.customId);
+        }
+        if (action === 'duel_type') {
+          return await duelCmd.handleSelect(interaction);
         }
         if (action === 'guildlist_filter') {
           return await require('./commands/owner').handleSelect(interaction);

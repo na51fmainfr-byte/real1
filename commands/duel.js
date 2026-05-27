@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 
 // wrapper for deferring interactions safely (avoids 10062 Unknown interaction)
 async function safeDefer(interaction) {
@@ -15,7 +15,7 @@ async function safeDefer(interaction) {
 const User = require('../models/User');
 const { cards: cardDefs } = require('../data/cards');
 const { resolveStats } = require('../utils/statResolver');
-const { getEffectDescription, normalizeGifUrl } = require('../utils/cards');
+const { getEffectDescription, normalizeGifUrl, getCardById, searchCards } = require('../utils/cards');
 const { getDamageMultiplier, getAttributeDescription } = require('../utils/attributeSystem');
 const { getNextPullResetDate } = require('../src/stock');
 
@@ -79,9 +79,63 @@ function resolveDuelEffectTarget(card, myTeam, opponentTeam, selectedTarget) {
 
 const calculateUserDamage = calculateUserDamageShared;
 
+// Find the best matching card from a player's pool using the repo's search
+// helpers and prioritizing the player's team/favorites like other commands.
+async function findCardInPoolByQuery(query, userId, pool) {
+  if (!query || !Array.isArray(pool) || pool.length === 0) return null;
+  const q = String(query).trim();
+  const ql = q.toLowerCase();
+  const poolIds = new Set((pool || []).map(p => String(p.def.id)));
+
+  // direct id match
+  try {
+    const byId = getCardById(q);
+    if (byId && poolIds.has(byId.id)) return pool.find(p => String(p.def.id) === byId.id);
+  } catch (e) {}
+
+  // Load user to access team/favorites/owned lists
+  let userDoc = null;
+  try { userDoc = await User.findOne({ userId }); } catch (e) {}
+  const teamIds = (userDoc && Array.isArray(userDoc.team)) ? userDoc.team : [];
+  const favIds = (userDoc && Array.isArray(userDoc.favoriteCards)) ? userDoc.favoriteCards : [];
+  const ownedIds = (userDoc && Array.isArray(userDoc.ownedCards)) ? userDoc.ownedCards.map(e => e.cardId) : [];
+
+  // Search general results and prefer those in the pool
+  try {
+    const results = searchCards(q);
+    if (results && results.length) {
+      const filtered = results.filter(r => poolIds.has(r.id));
+      if (filtered.length) {
+        // sort by priority: team+owned, fav+owned, owned, else
+        filtered.sort((a, b) => {
+          function score(r) {
+            if (teamIds.includes(r.id) && ownedIds.includes(r.id)) return 0;
+            if (favIds.includes(r.id) && ownedIds.includes(r.id)) return 1;
+            if (ownedIds.includes(r.id)) return 2;
+            return 3;
+          }
+          const sa = score(a), sb = score(b);
+          if (sa !== sb) return sa - sb;
+          return 0;
+        });
+        return pool.find(p => String(p.def.id) === filtered[0].id);
+      }
+    }
+  } catch (e) {}
+
+  // Fallback to matching by character name within the pool
+  let chosen = pool.find(c => (c.def.character || '').toLowerCase() === ql);
+  if (chosen) return chosen;
+  chosen = pool.find(c => (c.def.character || '').toLowerCase().includes(ql));
+  if (chosen) return chosen;
+
+  return null;
+}
+
 // Map to track pending duel requests (messageId => pendingState)
 const pendingDuelRequests = new Map();
 const duelStates = new Map();
+const stratDrafts = new Map();
 
 // global cut damage helper
 function applyGlobalCut(state) {
@@ -921,6 +975,189 @@ function clearUserState(userId) {
   }
 }
 
+// Start a STRAT draft session: players take turns picking cards into their duel teams
+async function startStratDraft(pending, interaction) {
+  const startingPlayer = pending.p1Speed >= pending.p2Speed ? 'player1' : 'player2';
+  const firstPicker = startingPlayer === 'player1' ? 'player2' : 'player1';
+  const other = firstPicker === 'player1' ? 'player2' : 'player1';
+  const pickOrder = [firstPicker, other, firstPicker, other, firstPicker, other];
+
+  const draftState = {
+    pending,
+    pickOrder,
+    currentPick: 0,
+    picks: { player1: [], player2: [] }
+  };
+
+  const nextPicker = draftState.pickOrder[0];
+  const nextName = nextPicker === 'player1' ? pending.discordUser1.username : pending.discordUser2.username;
+  const p1Names = 'None';
+  const p2Names = 'None';
+  const embed = new EmbedBuilder()
+    .setColor('#FFFFFF')
+    .setTitle('STRAT Duel | Draft')
+    .setDescription(`Players pick a card one at a time.\n\n**${nextName}'s turn to pick.**\n\n**${pending.discordUser1.username}'s team:**\n${p1Names}\n\n**${pending.discordUser2.username}'s team:**\n${p2Names}`);
+
+  // single add button that opens a modal for the picker
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`duel_strat_add:${nextPicker}`)
+      .setLabel('add a card')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  // send draft message and set a 90s inactivity timeout
+  const draftMsg = await interaction.channel.send({ embeds: [embed], components: [row] });
+  draftState.messageId = draftMsg.id;
+  stratDrafts.set(draftMsg.id, draftState);
+  // 90 second timeout for drafts
+  draftState.timeout = setTimeout(async () => {
+    try {
+      const expired = new EmbedBuilder()
+        .setColor('#FFFFFF')
+        .setTitle('STRAT Duel | Draft')
+        .setDescription(`${pending.discordUser1.username} vs ${pending.discordUser2.username}\n\nDraft timed out due to inactivity.`);
+      await draftMsg.edit({ embeds: [expired], components: [] }).catch(() => {});
+    } catch (e) {}
+    stratDrafts.delete(draftMsg.id);
+  }, 90 * 1000);
+}
+
+// Handle select menus on duel requests (duel type chooser)
+async function handleSelect(interaction) {
+  const msgId = interaction.message.id;
+  const pending = pendingDuelRequests.get(msgId);
+  if (!pending) return interaction.reply({ content: 'This duel request has expired.', ephemeral: true });
+  // Only the challenger (player1) may change the duel type
+  if (interaction.user.id !== pending.player1Id) {
+    return interaction.reply({ content: 'Only the challenger can change the duel type.', ephemeral: true });
+  }
+  const val = interaction.values && interaction.values[0];
+  pending.duelType = val || 'casual';
+  const embed = EmbedBuilder.from ? EmbedBuilder.from(interaction.message.embeds[0] || {}) : new EmbedBuilder().setDescription(interaction.message.embeds[0]?.description || '');
+  embed.setFooter({ text: `Duel type: ${pending.duelType === 'strat' ? 'STRAT (Draft)' : 'Casual'}` });
+  try { await interaction.update({ embeds: [embed] }); } catch (e) { try { await interaction.followUp({ embeds: [embed] }); } catch {} }
+}
+
+// Handle modal submit for STRAT draft picks
+async function handleStratModalSubmit(interaction) {
+  const parts = interaction.customId.split(':');
+  const msgId = parts[1];
+  const expectedIdx = parseInt(parts[2], 10);
+  const draft = stratDrafts.get(msgId);
+  if (!draft) return interaction.reply({ content: 'This draft session has expired.', ephemeral: true });
+  if (isNaN(expectedIdx) || expectedIdx !== draft.currentPick) {
+    return interaction.reply({ content: 'This pick is no longer valid.', ephemeral: true });
+  }
+
+  const cardQuery = (interaction.fields.getTextInputValue('card_input') || '').trim();
+  if (!cardQuery) return interaction.reply({ content: 'No card specified.', ephemeral: true });
+
+  const expected = draft.pickOrder[draft.currentPick];
+  const pool = expected === 'player1' ? draft.pending.player1Cards : draft.pending.player2Cards;
+  const allowedUserId = expected === 'player1' ? draft.pending.player1Id : draft.pending.player2Id;
+  if (interaction.user.id !== allowedUserId) return interaction.reply({ content: 'It is not your pick.', ephemeral: true });
+  let chosen = await findCardInPoolByQuery(cardQuery, allowedUserId, pool);
+  if (!chosen) return interaction.reply({ content: 'No matching card found in your team. Type the character name or ID from your team.', ephemeral: true });
+
+  // Prevent duplicate picks within the same player's selections
+  if (draft.picks[expected].find(c => c.def.id === chosen.def.id)) {
+    return interaction.reply({ content: 'You have already picked that card.', ephemeral: true });
+  }
+
+  draft.picks[expected].push(chosen);
+  draft.currentPick += 1;
+
+  // Clear previous inactivity timeout and set a fresh one if needed
+  if (draft.timeout) try { clearTimeout(draft.timeout); } catch (e) {}
+
+  const nextPicker = draft.currentPick < draft.pickOrder.length ? draft.pickOrder[draft.currentPick] : null;
+  const nextName = nextPicker ? (nextPicker === 'player1' ? draft.pending.discordUser1.username : draft.pending.discordUser2.username) : null;
+  const p1Names = draft.picks.player1.map(c => `${c.def.emoji || ''} ${c.def.character}`).join('\n') || 'None';
+  const p2Names = draft.picks.player2.map(c => `${c.def.emoji || ''} ${c.def.character}`).join('\n') || 'None';
+  const embed = new EmbedBuilder()
+    .setColor('#FFFFFF')
+    .setTitle('STRAT Duel | Draft')
+    .setDescription(`Players pick a card one at a time.\n\n**${nextName ? `${nextName}'s turn to pick.` : 'Draft complete.'}**\n\n**${draft.pending.discordUser1.username}'s team:**\n${p1Names}\n\n**${draft.pending.discordUser2.username}'s team:**\n${p2Names}`);
+
+  // If drafting complete, start the duel
+  if (!nextPicker) {
+    stratDrafts.delete(msgId);
+    try { await interaction.channel.messages.fetch(msgId).then(m => m.delete()).catch(() => {}); } catch (e) {}
+
+    const pending = draft.pending;
+    const startingPlayer = pending.p1Speed >= pending.p2Speed ? 'player1' : 'player2';
+    const rewardsAllowedMap = {};
+    const p1User = await User.findOne({ userId: pending.player1Id });
+    const p2User = await User.findOne({ userId: pending.player2Id });
+    rewardsAllowedMap[pending.player1Id] = !(p1User && (p1User.dailyDuels || 0) >= 3);
+    rewardsAllowedMap[pending.player2Id] = !(p2User && (p2User.dailyDuels || 0) >= 3);
+
+    const state = {
+      player1Id: pending.player1Id,
+      player2Id: pending.player2Id,
+      player1Cards: draft.picks.player1,
+      player2Cards: draft.picks.player2,
+      turn: startingPlayer,
+      startingPlayer: startingPlayer,
+      selected: null,
+      awaitingTarget: null,
+      finished: false,
+      log: '',
+      lastP1Action: '',
+      lastP2Action: '',
+      timeout: null,
+      embedImage: null,
+      gifMessageId: null,
+      discordUser1: pending.discordUser1,
+      discordUser2: pending.discordUser2,
+      isBountyDuel: false,
+      bountyHunter: null,
+      rewardsAllowed: rewardsAllowedMap
+    };
+    applyGlobalCut(state);
+    appendLog(state, `${state.startingPlayer === 'player1' ? state.discordUser1.username : state.discordUser2.username} goes first!`);
+    const battleEmbed = buildEmbed(state);
+    const row = makeSelectionRow(state, state.turn === 'player1');
+    const battleMsg = await interaction.channel.send({ embeds: [battleEmbed], components: [row] });
+    state.lastMsg = battleMsg;
+    duelStates.set(battleMsg.id, state);
+    await setupTimeout(state, battleMsg);
+    // respond to modal submit
+    try { await interaction.reply({ content: `Picked ${chosen.def.character}`, ephemeral: true }); } catch (e) {}
+    return;
+  }
+
+  // Otherwise update draft message to show next pick and reset timeout
+  const nextOwner = nextPicker;
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`duel_strat_add:${nextOwner}`)
+      .setLabel('add a card')
+      .setStyle(ButtonStyle.Secondary)
+  );
+  try {
+    const draftMsg = await interaction.channel.messages.fetch(msgId).catch(() => null);
+    if (draftMsg) await draftMsg.edit({ embeds: [embed], components: [row] });
+  } catch (e) {
+    console.error('Failed to update draft message after pick:', e);
+  }
+
+  // schedule new inactivity timeout
+  draft.timeout = setTimeout(async () => {
+    try {
+      const expired = new EmbedBuilder()
+        .setColor('#FFFFFF')
+        .setTitle('STRAT Duel | Draft')
+        .setDescription(`${draft.pending.discordUser1.username} vs ${draft.pending.discordUser2.username}\n\nDraft timed out due to inactivity.`);
+      await interaction.channel.messages.fetch(msgId).then(m => m.edit({ embeds: [expired], components: [] })).catch(() => {});
+    } catch (e) {}
+    stratDrafts.delete(msgId);
+  }, 90 * 1000);
+
+  try { await interaction.reply({ content: `Picked ${chosen.def.character}`, ephemeral: true }); } catch (e) {}
+}
+
 module.exports = {
   name: 'duel',
   description: 'Duel another player',
@@ -929,6 +1166,8 @@ module.exports = {
   ],
   clearUserState,
   duelStates,
+  handleSelect,
+  handleStratModalSubmit,
   async execute({ message, interaction, args }) {
     const userId = message ? message.author.id : interaction.user.id;
     let user1 = await User.findOne({ userId });
@@ -1110,12 +1349,21 @@ module.exports = {
           .setStyle(ButtonStyle.Secondary)
           .setEmoji('<:decline:1489632232942342154>')
       );
+    const typeSelectRow = new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId('duel_type')
+        .setPlaceholder('Select duel type')
+        .addOptions([
+          { label: 'Casual Duel', value: 'casual', description: 'Regular duel (default)' },
+          { label: 'STRAT Duel', value: 'strat', description: 'Drafting duel — pick cards before start' }
+        ])
+    );
     
     let acceptMsg;
     if (message) {
-      acceptMsg = await message.channel.send({ embeds: [acceptEmbed], components: [acceptRow] });
+      acceptMsg = await message.channel.send({ embeds: [acceptEmbed], components: [acceptRow, typeSelectRow] });
     } else {
-      acceptMsg = await interaction.reply({ embeds: [acceptEmbed], components: [acceptRow], fetchReply: true });
+      acceptMsg = await interaction.reply({ embeds: [acceptEmbed], components: [acceptRow, typeSelectRow], fetchReply: true });
     }
     
     // Store pending duel request temporarily
@@ -1212,6 +1460,14 @@ module.exports = {
           bountyHunter = pending.player2Id;
         }
         
+        // If this is a STRAT duel, begin drafting phase instead of starting immediately
+        if (pending.duelType === 'strat') {
+          try { await interaction.message.delete(); } catch {}
+          await startStratDraft(pending, interaction);
+          pendingDuelRequests.delete(msgId);
+          return;
+        }
+
         // Start the duel
         const rewardsAllowedMap = {};
         rewardsAllowedMap[pending.player1Id] = !(p1User && (p1User.dailyDuels || 0) >= 3);
@@ -1261,7 +1517,41 @@ module.exports = {
         return; // already deferred above
       }
     }
-    
+
+    // STRAT draft: open a modal to add a card
+    if (rawAction === 'duel_strat_add') {
+      const draft = stratDrafts.get(msgId);
+      if (!draft) return interaction.reply({ content: 'This draft session has expired.', ephemeral: true });
+
+      const parts = interaction.customId.split(':');
+      const owner = parts[1];
+
+      const expected = draft.pickOrder[draft.currentPick];
+      const allowedUserId = expected === 'player1' ? draft.pending.player1Id : draft.pending.player2Id;
+      if (interaction.user.id !== allowedUserId) {
+        return interaction.reply({ content: 'It is not your pick.', ephemeral: true });
+      }
+
+      // show modal for card input
+      try {
+        const modal = new ModalBuilder()
+          .setCustomId(`duel_strat_modal:${msgId}:${draft.currentPick}`)
+          .setTitle('Pick a card');
+        const input = new TextInputBuilder()
+          .setCustomId('card_input')
+          .setLabel('Card name or ID')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setPlaceholder('Type the character name or ID from your team');
+        modal.addComponents(new ActionRowBuilder().addComponents(input));
+        await interaction.showModal(modal);
+      } catch (e) {
+        console.error('Failed to show draft modal:', e);
+        return interaction.reply({ content: 'Failed to open pick form.', ephemeral: true });
+      }
+      return;
+    }
+
     const state = duelStates.get(msgId);
     const logs = [];
 

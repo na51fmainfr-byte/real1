@@ -658,6 +658,17 @@ async function execute({ message, args }) {
     return message.reply(`Owner gamble cooldown bypass is now **${next ? 'ENABLED' : 'DISABLED'}**.`);
   }
 
+  if (sub === 'toggleraid') {
+    const raidCmd = require('./raid');
+    const isNowOn = raidCmd.toggleRaidSoloMode();
+    return message.reply(
+      `Raid solo mode is now **${isNowOn ? 'ENABLED' : 'DISABLED'}**.\n` +
+      (isNowOn
+        ? '✅ You can now start a raid alone — no crew required, minimum 1 player.'
+        : '❌ Raid solo mode off — normal crew & player requirements apply.')
+    );
+  }
+
   if (sub === 'unsetdrops') {
     const channelMention = args[1];
     if (!channelMention) return message.reply('Usage: op owner unsetdrops <#channel>');

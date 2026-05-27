@@ -24,6 +24,15 @@ const {
   isSpecialAttackUnlocked,
   isStatusEffectUnlocked,
 } = require('../utils/starLevel');
+const { OWNER_ID } = require('../config');
+
+// ─── Owner solo-mode toggle ───────────────────────────────────────────────────
+// When enabled the bot owner can start and run a raid alone (no crew needed,
+// no minimum player count). Toggled via `op owner toggleraid`.
+
+let raidSoloMode = false;
+function toggleRaidSoloMode()    { raidSoloMode = !raidSoloMode; return raidSoloMode; }
+function isRaidSoloMode()        { return raidSoloMode; }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -421,7 +430,7 @@ async function startRaidBattle(state) {
   } catch (_) {}
 
   rebuildRoundQueue(state);
-  state.lastAction      = '⚔️ The raid has begun! Players attack in order of speed.';
+  state.lastAction      = 'The raid has begun! Players attack in order of speed.';
   state.battleMessageId = null;
   // Start the 60 s whole-raid inactivity watchdog
   resetInactivityTimer(state);
@@ -696,7 +705,9 @@ async function handleTimeout(state) {
 
 async function addCardToRaid(state, userId, username, cardQuery, user) {
   if (!state || state.phase !== 'lobby') return { err: 'There is no active raid lobby in this channel.' };
-  if (!state.crewMembers.includes(userId))   return { err: 'Only members of the raid crew can join!' };
+  // Solo mode: the owner bypasses the crew-membership gate
+  const ownerSolo = raidSoloMode && userId === OWNER_ID;
+  if (!ownerSolo && !state.crewMembers.includes(userId)) return { err: 'Only members of the raid crew can join!' };
   if (state.players.length >= MAX_PLAYERS)   return { err: `The raid is full! (${MAX_PLAYERS} players max)` };
   if (state.players.find(p => p.userId === userId)) return { err: 'You are already in this raid. Remove yourself first.' };
 
@@ -742,10 +753,25 @@ async function execBoss(ctx, bossQuery) {
   const def = findCardByQuery(bossQuery);
   if (!def || def.ship || def.artifact) return reply(ctx, `Could not find a card matching **${bossQuery}**.`);
 
-  const crew = await Crew.findOne({ members: userId });
-  if (!crew) return reply(ctx, 'You must be in a crew to start a raid! Only crew members can join.');
+  // ── Solo-mode bypass (owner only) ────────────────────────────────────────
+  const ownerSolo = raidSoloMode && userId === OWNER_ID;
 
-  const { emoji: hostRoleEmoji } = await resolveHostRole(crew, userId);
+  let crew, hostRoleEmoji, crewId, crewName, crewMembers;
+  if (ownerSolo) {
+    crew          = null;
+    hostRoleEmoji = EMOJI.captain;
+    crewId        = 'solo';
+    crewName      = `${username}'s Solo Raid`;
+    crewMembers   = [userId];
+  } else {
+    crew = await Crew.findOne({ members: userId });
+    if (!crew) return reply(ctx, 'You must be in a crew to start a raid! Only crew members can join.');
+    const resolved = await resolveHostRole(crew, userId);
+    hostRoleEmoji  = resolved.emoji;
+    crewId         = crew.crewId;
+    crewName       = crew.name;
+    crewMembers    = [...(crew.members || [])];
+  }
 
   user.items = removeItem(user.items || [], 'god_token', 1);
   await user.save();
@@ -753,12 +779,12 @@ async function execBoss(ctx, bossQuery) {
   const boss  = buildBossFromDef(def);
   const state = {
     channelId, messageId: null, battleMessageId: null, channel,
-    ownerId: userId, ownerUsername: username, crewId: crew.crewId,
-    crewName: crew.name, crewMembers: [...(crew.members || [])], hostRoleEmoji,
+    ownerId: userId, ownerUsername: username, crewId, crewName, crewMembers, hostRoleEmoji,
     phase: 'lobby', boss, players: [],
     roundQueue: [], roundIndex: 0,
     finished: false, lastAction: '', startTimeoutId: null,
     turnTimeoutId: null, inactTimeoutId: null,
+    soloMode: ownerSolo,
   };
 
   raidStates.set(channelId, state);
@@ -776,7 +802,9 @@ async function execBoss(ctx, bossQuery) {
   state.startTimeoutId = setTimeout(async () => {
     const s = raidStates.get(channelId);
     if (!s || s.phase !== 'lobby') return;
-    if (s.players.length < MIN_PLAYERS) {
+    // Solo-mode raids only need 1 player (the owner); normal raids need MIN_PLAYERS
+    const minNeeded = s.soloMode ? 1 : MIN_PLAYERS;
+    if (s.players.length < minNeeded) {
       try {
         const emojiId = getEmojiId(s.boss.emoji);
         const ce = new EmbedBuilder()
@@ -784,7 +812,7 @@ async function execBoss(ctx, bossQuery) {
           .setTitle('**Raid Cancelled**')
           .setDescription(
             `Not enough players joined the raid against **${s.boss.name}** ` +
-            `(${s.players.length}/${MIN_PLAYERS} needed).\n${EMOJI.godToken} God Token refunded to **${s.ownerUsername}**.`
+            `(${s.players.length}/${minNeeded} needed).\n${EMOJI.godToken} God Token refunded to **${s.ownerUsername}**.`
           );
         if (emojiId) ce.setThumbnail(`https://cdn.discordapp.com/emojis/${emojiId}.png`);
         const msg = await channel.messages.fetch(s.messageId).catch(() => null);
@@ -1027,4 +1055,6 @@ module.exports = {
   },
 
   getRaidState(channelId) { return raidStates.get(channelId); },
+  toggleRaidSoloMode,
+  isRaidSoloMode,
 };

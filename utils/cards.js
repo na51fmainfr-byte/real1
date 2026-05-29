@@ -1100,9 +1100,6 @@ function buildCardEmbed(cardDef, userEntry, avatarUrl, user) {
             } else if (cardDef.effect === 'prone') {
               const amount = normalizeEffectValue(cardDef.effectAmount, 20);
               amountLabel = ` (${amount}% extra)`;
-            } else if (cardDef.effect === 'drunk') {
-              const amount = normalizeEffectValue(cardDef.effectChance ?? cardDef.effectAmount, 20);
-              amountLabel = ` (${amount}% wrong target chance)`;
             } else if (cardDef.effect === 'hungry') {
               const amount = normalizeEffectValue(cardDef.effectAmount, 1);
               amountLabel = ` (${amount} damage/turn)`;

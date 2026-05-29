@@ -1681,6 +1681,20 @@ module.exports = {
       const targets = Array.from(new Set(selectedIndices)).map(i => opponentTeam[i]).filter(t => t && t.currentHP > 0);
       if (!targets.length) return interaction.reply({ content: 'No valid targets selected.', ephemeral: true });
 
+      // Drunk: redirect a single-target attack to a random different alive opponent
+      let resolvedTargets = targets;
+      {
+        const drunkChance = getDrunkChance(card);
+        if (drunkChance > 0 && resolvedTargets.length === 1 && Math.random() * 100 < drunkChance) {
+          const otherTargets = opponentTeam.filter(c => c.currentHP > 0 && c !== resolvedTargets[0]);
+          if (otherTargets.length > 0) {
+            const newTarget = otherTargets[Math.floor(Math.random() * otherTargets.length)];
+            logs.push(`${card.def.character} is drunk and staggers — attacks ${newTarget.def.character} instead!`);
+            resolvedTargets = [newTarget];
+          }
+        }
+      }
+
       // Apply energy cost and bleed once per action
       if (action === 'attack') {
         if (card.energy < 1) return interaction.reply({ content: 'Not enough energy.', ephemeral: true });
@@ -1698,8 +1712,8 @@ module.exports = {
       const perTargetDmg = [];
       let base = calculateUserDamage(card, action);
       // If attacking multiple targets, divide the base damage across them
-      if (targets.length > 1) base = Math.max(0, Math.floor(base / targets.length));
-      for (const tgt of targets) {
+      if (resolvedTargets.length > 1) base = Math.max(0, Math.floor(base / resolvedTargets.length));
+      for (const tgt of resolvedTargets) {
         if (!tgt) continue;
         const attrMultiplier = getDamageMultiplier(card.def.attribute, tgt.def.attribute);
         const proneMultiplier = getProneMultiplier(card, tgt);
@@ -1737,10 +1751,10 @@ module.exports = {
           effectTarget = opponentTeam.filter(c => c.currentHP > 0);
         } else if (card.def.all) {
           // `all` effects target the selected group of targets as intended
-          if (card.def.effect) effectTarget = targets;
+          if (card.def.effect) effectTarget = resolvedTargets;
         } else {
           // scount only splits damage; special effect still applies to the primary selected target
-          effectTarget = targets[0] || null;
+          effectTarget = resolvedTargets[0] || null;
         }
         const { isStatusEffectUnlocked: _duelAwaitEffUnlocked } = require('../utils/starLevel');
         if (effectTarget && _duelAwaitEffUnlocked(card.userEntry?.starLevel)) {
@@ -1753,7 +1767,7 @@ module.exports = {
       }
 
       // Build a compact action summary
-      const names = targets.map(t => `${t.def.emoji || ''} ${t.def.character}`).join(', ');
+      const names = resolvedTargets.map(t => `${t.def.emoji || ''} ${t.def.character}`).join(', ');
       const dmgSummary = perTargetDmg.length
         ? (perTargetDmg.length === 1
           ? `**${perTargetDmg[0]} DMG**`

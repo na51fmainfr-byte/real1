@@ -2150,6 +2150,18 @@ module.exports = {
           damageTarget = m;
           effectTarget = resolveEffectTarget(card, state, m);
         }
+        // Drunk: redirect attack to a random different alive marine
+        {
+          const drunkChance = getDrunkChance(card);
+          if (drunkChance > 0 && damageTarget && Math.random() * 100 < drunkChance) {
+            const otherMarines = state.marines.filter(m => m.currentHP > 0 && m !== damageTarget);
+            if (otherMarines.length > 0) {
+              const newTarget = otherMarines[Math.floor(Math.random() * otherMarines.length)];
+              appendLog(state, `${card.def.character} is drunk and staggers — attacks ${newTarget.rank || newTarget.def?.character} instead!`);
+              damageTarget = newTarget;
+            }
+          }
+        }
         // calculate final damage with attribute multiplier and modifiers
         let attrMultiplier = 1;
         let isDodgedByTruesight = false;
@@ -2170,7 +2182,13 @@ module.exports = {
         }
 
         const dmg = isDodgedByTruesight ? 0 : Math.max(0, Math.floor(baseDmg * attrMultiplier * proneMultiplier * attackMod * defenseMultiplier));
-        if (damageTarget && !isDodgedByTruesight) {
+        const _reflectSt1 = !isDodgedByTruesight && damageTarget ? getReflectStatus(damageTarget) : null;
+        if (_reflectSt1) {
+          card.currentHP = Math.max(0, (card.currentHP || 0) - dmg);
+          const reflectKO = handleKO(card);
+          if (reflectKO) appendLog(state, reflectKO);
+          appendLog(state, `${damageTarget.rank || damageTarget.def?.character}'s reflect sends the attack back to ${card.def.character} for **${dmg} DMG**!`);
+        } else if (damageTarget && !isDodgedByTruesight) {
           damageTarget.currentHP -= dmg;
           if (damageTarget.currentHP <= 0) damageTarget.currentHP = 0;
           const ko = handleKO(damageTarget);
@@ -2472,7 +2490,7 @@ module.exports = {
           return interaction.followUp({ content: 'No valid targets remaining.', ephemeral: true });
         }
       }
-      const m = state.marines[targetIdx];
+      let m = state.marines[targetIdx];
       if (!m || m.currentHP <= 0) {
         return interaction.followUp({ content: 'Target is already defeated.', ephemeral: true });
       }
@@ -2501,6 +2519,18 @@ module.exports = {
       card.turnsUntilRecharge = 2;
       const confusionResolved = await handleConfusionAction(state, interaction, card, act);
       if (confusionResolved) return safeDefer(interaction);
+      // Drunk: redirect attack to a random different alive marine
+      {
+        const drunkChance = getDrunkChance(card);
+        if (drunkChance > 0 && Math.random() * 100 < drunkChance) {
+          const otherMarines = state.marines.filter(other => other.currentHP > 0 && other !== m);
+          if (otherMarines.length > 0) {
+            const newTarget = otherMarines[Math.floor(Math.random() * otherMarines.length)];
+            appendLog(state, `${card.def.character} is drunk and staggers — attacks ${newTarget.rank || newTarget.def?.character} instead!`);
+            m = newTarget;
+          }
+        }
+      }
       const user = await User.findOne({ userId: state.userId });
       const baseDmg = calculateUserDamage(card, act, user);
       let attrMultiplier = 1;
@@ -2521,7 +2551,13 @@ module.exports = {
       }
 
       const dmg = isDodgedByTruesight ? 0 : Math.max(0, Math.floor(baseDmg * attrMultiplier * proneMultiplier * attackMod * defenseMultiplier));
-      if (!isDodgedByTruesight) {
+      const _reflectSt2 = !isDodgedByTruesight ? getReflectStatus(m) : null;
+      if (_reflectSt2) {
+        card.currentHP = Math.max(0, (card.currentHP || 0) - dmg);
+        const reflectKO = handleKO(card);
+        if (reflectKO) appendLog(state, reflectKO);
+        appendLog(state, `${m.rank || m.def?.character}'s reflect sends the attack back to ${card.def.character} for **${dmg} DMG**!`);
+      } else if (!isDodgedByTruesight) {
         m.currentHP -= dmg;
         if (m.currentHP <= 0) {
           m.currentHP = 0;

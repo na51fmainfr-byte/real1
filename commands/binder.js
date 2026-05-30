@@ -66,11 +66,19 @@ function sortFilteredCards(cards, user) {
 function buildCharacterCards(query, user) {
   const q = query.toLowerCase().trim();
   const ownedSet = new Set((user.ownedCards || []).map(e => e.cardId));
-  const matched = allCards.filter(c => {
-    if (c.character.toLowerCase().includes(q)) return true;
-    if (Array.isArray(c.alias) && c.alias.some(a => a.toLowerCase().includes(q))) return true;
+  // Prefer exact name/alias matches first, then fall back to substring matching
+  let matched = allCards.filter(c => {
+    if (c.character.toLowerCase() === q) return true;
+    if (Array.isArray(c.alias) && c.alias.some(a => a.toLowerCase() === q)) return true;
     return false;
   });
+  if (!matched.length) {
+    matched = allCards.filter(c => {
+      if (c.character.toLowerCase().includes(q)) return true;
+      if (Array.isArray(c.alias) && c.alias.some(a => a.toLowerCase().includes(q))) return true;
+      return false;
+    });
+  }
   return sortFilteredCards(matched.map(cardDef => ({ cardDef, owned: ownedSet.has(cardDef.id) })), user);
 }
 

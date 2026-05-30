@@ -298,10 +298,42 @@ module.exports = {
       a: 'artifacts-only', artifacts: 'artifacts-only',
     };
     const filterArg = (args?.[0] || '').toLowerCase();
-    const initialMode = FILTER_ALIASES[filterArg] || 'strongest-weakest';
-    const initialCards = initialMode !== 'strongest-weakest'
-      ? sortAndFilter(sorted, initialMode, user)
-      : sorted;
+      const initialMode = FILTER_ALIASES[filterArg] || 'strongest-weakest';
+      let initialCards = initialMode !== 'strongest-weakest'
+        ? sortAndFilter(sorted, initialMode, user)
+        : sorted;
+
+      // If a non-alias arg is provided, treat it as a character or faction query
+      if (args && args.length && !FILTER_ALIASES[filterArg]) {
+        const { cards: allCards } = require('../data/cards');
+        function normalizeFaculty(f) {
+          if (!f || f === 'null') return null;
+          const t = f.trim();
+          if (t.toLowerCase() === 'marines') return 'Marines';
+          return t;
+        }
+
+        const FACTIONS = [...new Set(allCards.map(c => normalizeFaculty(c.faculty)).filter(Boolean))].sort();
+        const query = args.join(' ').toLowerCase().trim();
+
+        // Try faction match first (allow partial match), then character exact then substring
+        const matchedFaction = FACTIONS.find(f => f.toLowerCase().includes(query) || query.includes(f.toLowerCase()));
+        let matchedIds = new Set();
+        if (matchedFaction) {
+          allCards.filter(c => normalizeFaculty(c.faculty) === matchedFaction).forEach(c => matchedIds.add(c.id));
+        } else {
+          // character exact match first
+          let matched = allCards.filter(c => c.character.toLowerCase() === query || (Array.isArray(c.alias) && c.alias.some(a => a.toLowerCase() === query)));
+          if (!matched.length) {
+            matched = allCards.filter(c => c.character.toLowerCase().includes(query) || (Array.isArray(c.alias) && c.alias.some(a => a.toLowerCase().includes(query))));
+          }
+          matched.forEach(c => matchedIds.add(c.id));
+        }
+
+        if (matchedIds.size > 0) {
+          initialCards = initialCards.filter(item => matchedIds.has(item.card.id));
+        }
+      }
 
     const session = { userId, cards: initialCards, original: sorted, currentIndex: 0, mode: initialMode, cachedUser: user };
     if (!global.collectionSessions) global.collectionSessions = new Map();

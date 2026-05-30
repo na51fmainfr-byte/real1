@@ -59,6 +59,24 @@ module.exports = {
     if (!card) {
       leveler = findFirstLeveler(query);
       if (!leveler) {
+        // Attempt to remove an arbitrary user item with an exact/normalized id match (sell for 0 Beli)
+        const normalize = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+        const itemEntry = (user.items || []).find(it => normalize(it.itemId) === normalize(query));
+        if (itemEntry) {
+          // Remove one unit by default
+          itemEntry.quantity = (itemEntry.quantity || 0) - 1;
+          if (itemEntry.quantity <= 0) {
+            user.items = (user.items || []).filter(i => normalize(i.itemId) !== normalize(query));
+          }
+          await user.save();
+          const embed = new EmbedBuilder()
+            .setColor('#FFFFFF')
+            .setTitle('Item Removed')
+            .setDescription(`Removed **${itemEntry.itemId}** from your inventory for **0** ¥`);
+          if (message) return message.channel.send({ embeds: [embed] });
+          return interaction.reply({ embeds: [embed] });
+        }
+
         const reply = `No card or leveler found matching **${query}**.`;
         if (message) return message.channel.send(reply);
         return interaction.reply({ content: reply, ephemeral: true });

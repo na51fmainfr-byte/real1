@@ -700,8 +700,8 @@ async function main() {
       if (cmd === 'loot') return await lootCmd.execute({ message });
       if (cmd === 'timers') return await timersCmd.execute({ message });
       if (cmd === 'trivia') return await triviaCmd.execute({ message });
-      if (cmd === 'collection') return await require('./commands/collection').execute({ message });
-      if (cmd === 'binder') return await binderCmd.execute({ message });
+      if (cmd === 'collection') return await require('./commands/collection').execute({ message, args });
+      if (cmd === 'binder') return await binderCmd.execute({ message, args });
       if (cmd === 'info') return await require('./commands/info').execute({ message, args });
       if (cmd === 'upgrade') return await require('./commands/upgrade').execute({ message, args });
       if (cmd === 'set' || cmd === 'setship') return await setShipCmd.execute({ message, args });

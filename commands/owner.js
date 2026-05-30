@@ -205,11 +205,29 @@ async function execute({ message, args }) {
         const mention = args[4];
         targetId = parseMention(mention);
         if (!itemId || isNaN(amtParsed) || !targetId) return message.reply('Usage: op owner give item <itemId> <amount> <@user>');
+        // validate itemId against known item lists
+        const { levelers } = require('../data/levelers');
+        const { rods } = require('../data/rods');
+        const { chests } = require('../data/chests');
+        const shardIds = new Set(['red_shard', 'blue_shard', 'green_shard', 'yellow_shard', 'purple_shard']);
+        const specialItems = new Set(['god_token', 'cola']);
+
+        const validLevelers = new Set((levelers || []).map(l => l.id));
+        const validRods = new Set((rods || []).map(r => r.id));
+        const validChests = new Set((chests || []).map(c => c.id));
+
+        const isValid = validLevelers.has(itemId) || validRods.has(itemId) || validChests.has(itemId) || shardIds.has(itemId) || specialItems.has(itemId);
+        if (!isValid) {
+          return message.reply(`Unknown item id: ${itemId}. Not added. Use a valid leveler/chest/rod/shard or shop item id.`);
+        }
+
+        if (amtParsed <= 0) return message.reply('Amount must be a positive number');
+
         let tgt = await User.findOne({ userId: targetId });
         if (!tgt) return message.reply('Target user does not have an account.');
         tgt.items = tgt.items || [];
         const existing = tgt.items.find(it => it.itemId === itemId);
-        if (existing) existing.quantity += amtParsed;
+        if (existing) existing.quantity = (existing.quantity || 0) + amtParsed;
         else tgt.items.push({ itemId, quantity: amtParsed });
         await tgt.save();
         return message.reply(`Given ${amtParsed} ${itemId}(s) to <@${targetId}>`);

@@ -108,12 +108,6 @@ async function generateBinderCanvas(slots) {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('Not Owned', x + CELL_W / 2, y + CELL_H / 2 - 10);
-
-      // Card ID below "Not Owned" in the card's attribute colour
-      const attrColor = ATTRIBUTE_COLORS[cardDef.attribute] || '#aaaaaa';
-      ctx.fillStyle = attrColor;
-      ctx.font = 'bold 11px sans-serif';
-      ctx.fillText(`#${cardDef.id}`, x + CELL_W / 2, y + CELL_H / 2 + 8);
     }
 
     // Rank badge — only for ships and artifacts (not regular attacking cards)
@@ -127,6 +121,38 @@ async function generateBinderCanvas(slots) {
       ctx.textBaseline = 'top';
       ctx.fillText(rank, x + CELL_W - 6, y + 6);
       ctx.shadowBlur = 0;
+    }
+
+    // Always render card ID at the bottom with a translucent background to ensure visibility
+    try {
+      const idBgX = x + 6;
+      const idBgY = y + CELL_H - 26;
+      const idBgW = CELL_W - 12;
+      const idBgH = 20;
+      // slightly darker background for improved contrast
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+      ctx.fillRect(idBgX, idBgY, idBgW, idBgH);
+
+      const idText = `#${cardDef.id}`;
+      const idColor = (cardDef.ship || cardDef.artifact) ? '#FFFFFF' : (ATTRIBUTE_COLORS[cardDef.attribute] || '#aaaaaa');
+      const centerX = x + CELL_W / 2;
+      const centerY = idBgY + idBgH / 2;
+
+      ctx.save();
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      // shadow + stroke for readability against bright borders
+      ctx.shadowColor = 'rgba(0,0,0,0.7)';
+      ctx.shadowBlur = 6;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+      ctx.strokeText(idText, centerX, centerY);
+      ctx.fillStyle = idColor;
+      ctx.fillText(idText, centerX, centerY);
+      ctx.restore();
+    } catch (e) {
+      // fail silently if drawing ID fails
     }
   }
 

@@ -108,27 +108,16 @@ module.exports = {
   async execute({ message, interaction, args }) {
     const initiatorId = message ? message.author.id : interaction.user.id;
     const initiatorName = message ? message.author.username : interaction.user.username;
-    const rawOffer = message ? args[0] : interaction.options.getString('offer');
-    const rawWant = message ? args[1] : interaction.options.getString('want');
-    const mention = message ? args[2] : interaction.options.getUser('target')?.id;
-    const targetId = message ? parseMention(mention) || mention : mention;
+    // Parse arguments. Support legacy single-item format and a new
+    // multi-item format for message commands: "offer1, offer2, *50 . want1, *700 @user"
+    let offered = null;
+    let requested = null;
+    let offeredList = null;
+    let requestedList = null;
+    let targetId = null;
 
-    if (!rawOffer || !rawWant || !targetId) {
-      const reply = 'Usage: op trade <offer|*<beli>|<leveler>> <wanted|*<beli>|<leveler>> <@user>'; 
-      if (message) return message.reply(reply);
-      return interaction.reply({ content: reply, ephemeral: true });
-    }
-
-    if (targetId === initiatorId) {
-      const r = 'Cannot trade with yourself.';
-      if (message) return message.reply(r);
-      return interaction.reply({ content: r, ephemeral: true });
-    }
-
-    const initiator = await User.findOne({ userId: initiatorId });
-    const target = await User.findOne({ userId: targetId });
-    if (!initiator) return (message ? message.reply('You have no account.') : interaction.reply({ content: 'You have no account.', ephemeral: true }));
-    if (!target) return (message ? message.reply('Target has no account.') : interaction.reply({ content: 'Target has no account.', ephemeral: true }));
+    // Leveler class keywords used by parseTradeItem (define early to avoid TDZ when parsing message-mode lists)
+    const LEVELER_CLASSES = new Set(['str', 'qck', 'int', 'psy', 'dex', 'all']);
 
     // helper to find a leveler by id or name (accept id or compact name without spaces)
     function findLeveler(query) {
@@ -148,7 +137,7 @@ module.exports = {
     }
 
     function findCardByAcronym(query) {
-      const q = query.toLowerCase();
+      const q = String(query).toLowerCase();
       // Exact acronym match first
       const exact = allCards.filter(c => !c.artifact && !c.ship && !c.boost && getAcronym(c.character || '') === q);
       if (exact.length === 1) return exact[0];
@@ -156,9 +145,6 @@ module.exports = {
       if (exact.length > 1) return exact[0];
       return null;
     }
-
-    // Leveler class keywords matching feed command conventions
-    const LEVELER_CLASSES = new Set(['str', 'qck', 'int', 'psy', 'dex', 'all']);
 
     function parseTradeItem(raw) {
       if (typeof raw === 'string' && raw.startsWith('*')) {
@@ -192,20 +178,242 @@ module.exports = {
       return null;
     }
 
-    const offered = parseTradeItem(rawOffer);
-    const requested = parseTradeItem(rawWant);
-    if (!offered || !requested) {
-      const r = 'Unable to find offered or requested item. Use a card id/name, leveler id/name, or *<amount> for beli.';
+    if (message) {
+      const joined = (args || []).join(' ').trim();
+
+      // Prefer explicit Discord mention if present
+      if (message.mentions && message.mentions.users && message.mentions.users.size > 0) {
+        targetId = message.mentions.users.first().id;
+      } else {
+        // Try to detect a numeric user id token in args (fallback)
+        const maybe = (args || []).find(a => /^\d{17,19}$/.test(a));
+        if (maybe) targetId = maybe;
+      }
+
+      // Strip mentions from the joined string so parsing isn't affected
+      let rawNoMention = joined.replace(/<@!?\d+>/g, '').trim();
+      if (targetId && !rawNoMention) rawNoMention = joined; // fallback
+
+      // Dot (.) separates offered side from requested side. Commas separate multiple items.
+      if (rawNoMention.includes('.')) {
+        const dotIndex = rawNoMention.indexOf('.');
+        const left = rawNoMention.slice(0, dotIndex).trim();
+        const right = rawNoMention.slice(dotIndex + 1).trim();
+        const leftItems = left.split(',').map(s => s.trim()).filter(Boolean).map(s => s.replace(/^[.,]+|[.,]+$/g, ''));
+        const rightItems = right.split(',').map(s => s.trim()).filter(Boolean).map(s => s.replace(/^[.,]+|[.,]+$/g, ''));
+        offeredList = leftItems.map(i => i.trim()).filter(Boolean);
+        requestedList = rightItems.map(i => i.trim()).filter(Boolean);
+      } else {
+        // Legacy: first two tokens are offer and want
+        if (args && args.length) offeredList = [args[0]];
+        if (args && args.length > 1) requestedList = [args[1]];
+        // last possible token may be a mention (id or <@...>) - if not already found, try args[2]
+        if (!targetId && args && args.length > 2) {
+          const maybe = args[2];
+          targetId = parseMention(maybe) || ( /^\d{17,19}$/.test(maybe) ? maybe : null );
+        }
+      }
+
+      if (!offeredList || !requestedList || !offeredList.length || !requestedList.length || !targetId) {
+        const reply = 'Usage: op trade <offer|*<beli>|<leveler>> <wanted|*<beli>|<leveler>> <@user>  OR  op trade item1,item2 . want1,want2 @user';
+        if (message) return message.reply(reply);
+        return interaction.reply({ content: reply, ephemeral: true });
+      }
+
+      // Parse each offered/requested token
+      const parsedOffered = offeredList.map(parseTradeItem);
+      const parsedRequested = requestedList.map(parseTradeItem);
+      if (parsedOffered.some(p => !p) || parsedRequested.some(p => !p)) {
+        const r = 'Unable to find one or more offered/requested items. Use card id/acronym, leveler id/name, or *<amount> for beli.';
+        if (message) return message.reply(r);
+        return interaction.reply({ content: r, ephemeral: true });
+      }
+
+      // If both sides have only one item, keep legacy single-item flow
+      if (parsedOffered.length === 1 && parsedRequested.length === 1) {
+        offered = parsedOffered[0];
+        requested = parsedRequested[0];
+        // targetId already computed
+      } else {
+        offeredList = parsedOffered;
+        requestedList = parsedRequested;
+        // create a multi-item session below
+      }
+    } else {
+      // Interaction (slash) path: keep original single-item option parsing
+      const rawOffer = interaction.options.getString('offer');
+      const rawWant = interaction.options.getString('want');
+      const mention = interaction.options.getUser('target')?.id;
+      targetId = mention;
+      offered = parseTradeItem(rawOffer);
+      requested = parseTradeItem(rawWant);
+      if (!offered || !requested || !targetId) {
+        const reply = 'Usage: /trade <offer> <want> <target>'; 
+        return interaction.reply({ content: reply, ephemeral: true });
+      }
+    }
+
+    if (targetId === initiatorId) {
+      const r = 'Cannot trade with yourself.';
       if (message) return message.reply(r);
       return interaction.reply({ content: r, ephemeral: true });
     }
 
+    const initiator = await User.findOne({ userId: initiatorId });
+    const target = await User.findOne({ userId: targetId });
+    if (!initiator) return (message ? message.reply('You have no account.') : interaction.reply({ content: 'You have no account.', ephemeral: true }));
+    if (!target) return (message ? message.reply('Target has no account.') : interaction.reply({ content: 'Target has no account.', ephemeral: true }));
+
+    
+
     const sessionId = `${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
     const session = { id: sessionId, initiatorId, targetId, createdAt: Date.now() };
 
+    // If we built multi lists, create a multi-type session
+    if (!offered && !requested && offeredList && requestedList) {
+      session.type = 'multi';
+      session.offeredList = offeredList;
+      session.requestedList = requestedList;
+    }
+
     // Validate ownership / funds depending on kinds
+    // Multi-item trade handling
+    if (session.type === 'multi') {
+      const offeredListLocal = session.offeredList || [];
+      const requestedListLocal = session.requestedList || [];
+
+      // helper to sum beli amounts
+      const sumBeli = (list) => (list || []).filter(i => i.kind === 'beli').reduce((s, i) => s + (i.amount || 0), 0);
+      const offeredBeliTotal = sumBeli(offeredListLocal);
+      const requestedBeliTotal = sumBeli(requestedListLocal);
+
+      // basic balance checks
+      if ((initiator.balance || 0) < offeredBeliTotal) {
+        const r = `You do not have ¥${offeredBeliTotal}.`;
+        if (message) return message.reply(r);
+        return interaction.reply({ content: r, ephemeral: true });
+      }
+      if ((target.balance || 0) < requestedBeliTotal) {
+        const r = `Target does not have ¥${requestedBeliTotal}.`;
+        if (message) return message.reply(r);
+        return interaction.reply({ content: r, ephemeral: true });
+      }
+
+      // verify ownership/availability for cards/levelers
+      for (const it of offeredListLocal) {
+        if (!it) continue;
+        if (it.kind === 'card') {
+          const have = (initiator.ownedCards || []).some(e => e.cardId === it.id);
+          if (!have) {
+            const r = `You do not own ${it.def?.emoji || ''} **${it.def?.character || it.id}**.`;
+            if (message) return message.reply(r);
+            return interaction.reply({ content: r, ephemeral: true });
+          }
+          if ((initiator.team || []).includes(it.id)) {
+            const r = 'You must remove the offered card from your team before trading it.';
+            if (message) return message.reply(r);
+            return interaction.reply({ content: r, ephemeral: true });
+          }
+          if (cardHasArtifactEquipped(initiator, it.id)) {
+            const r = 'You must unequip any artifact attached to the offered card before trading it.';
+            if (message) return message.reply(r);
+            return interaction.reply({ content: r, ephemeral: true });
+          }
+        }
+        if (it.kind === 'leveler') {
+          const qtyNeed = Math.max(1, it.qty || 1);
+          const itemHave = (initiator.items || []).find(i => i.itemId === it.id && (i.quantity || 0) >= qtyNeed);
+          if (!itemHave) {
+            const r = `You do not have ${qtyNeed}x **${it.def?.name || it.id}**.`;
+            if (message) return message.reply(r);
+            return interaction.reply({ content: r, ephemeral: true });
+          }
+        }
+        if (it.kind === 'leveler_class') {
+          const r = 'Trading by leveler class is not supported in multi-item trades. Use single-item trades.';
+          if (message) return message.reply(r);
+          return interaction.reply({ content: r, ephemeral: true });
+        }
+      }
+
+      for (const it of requestedListLocal) {
+        if (!it) continue;
+        if (it.kind === 'card') {
+          const have = (target.ownedCards || []).some(e => e.cardId === it.id);
+          if (!have) {
+            const r = `Target does not own ${it.def?.emoji || ''} **${it.def?.character || it.id}**.`;
+            if (message) return message.reply(r);
+            return interaction.reply({ content: r, ephemeral: true });
+          }
+          if ((target.team || []).includes(it.id)) {
+            const r = 'Target must remove the requested card from their team before trading.';
+            if (message) return message.reply(r);
+            return interaction.reply({ content: r, ephemeral: true });
+          }
+          if (cardHasArtifactEquipped(target, it.id)) {
+            const r = 'Target must unequip any artifact attached to the requested card before trading.';
+            if (message) return message.reply(r);
+            return interaction.reply({ content: r, ephemeral: true });
+          }
+        }
+        if (it.kind === 'leveler') {
+          const qtyNeed = Math.max(1, it.qty || 1);
+          const itemHave = (target.items || []).find(i => i.itemId === it.id && (i.quantity || 0) >= qtyNeed);
+          if (!itemHave) {
+            const r = `Target does not have ${qtyNeed}x **${it.def?.name || it.id}**.`;
+            if (message) return message.reply(r);
+            return interaction.reply({ content: r, ephemeral: true });
+          }
+        }
+        if (it.kind === 'leveler_class') {
+          const r = 'Trading by leveler class is not supported in multi-item trades. Use single-item trades.';
+          if (message) return message.reply(r);
+          return interaction.reply({ content: r, ephemeral: true });
+        }
+      }
+
+      // Compute and validate shard requirements aggregated per side
+      const aggShards = (list) => {
+        const map = {};
+        for (const it of list) {
+          if (it.kind !== 'card') continue;
+          const sid = shardIdForAttribute(it.def?.attribute || '');
+          const cnt = shardCostForRank(it.def?.rank || '');
+          if (sid && cnt > 0) map[sid] = (map[sid] || 0) + cnt;
+        }
+        return map;
+      };
+      const offeredShards = aggShards(offeredListLocal);
+      const requestedShards = aggShards(requestedListLocal);
+      // Persist shard aggregates into the session so the confirmation embed can show them
+      session.offeredShardTotals = offeredShards;
+      session.requestedShardTotals = requestedShards;
+
+      for (const [sid, cnt] of Object.entries(offeredShards)) {
+        const have = findItemCount(initiator.items || [], sid);
+        if (have < cnt) {
+          const sname = ITEM_DISPLAY_NAMES[sid] || sid;
+          const semoji = ITEM_DISPLAY_EMOJIS[sid] || '';
+          const r = `You need ${semoji} ${sname} x${cnt} to offer these cards (you have ${have}).`;
+          if (message) return message.reply(r);
+          return interaction.reply({ content: r, ephemeral: true });
+        }
+      }
+      for (const [sid, cnt] of Object.entries(requestedShards)) {
+        const have = findItemCount(target.items || [], sid);
+        if (have < cnt) {
+          const sname = ITEM_DISPLAY_NAMES[sid] || sid;
+          const semoji = ITEM_DISPLAY_EMOJIS[sid] || '';
+          const r = `Target needs ${semoji} ${sname} x${cnt} to offer these cards (they have ${have}).`;
+          if (message) return message.reply(r);
+          return interaction.reply({ content: r, ephemeral: true });
+        }
+      }
+
+      // All validations passed — proceed to confirmation embed below using the same session object
+    }
     // card <-> card
-    if (offered.kind === 'card' && requested.kind === 'card') {
+    else if (offered.kind === 'card' && requested.kind === 'card') {
       const offeredEntry = (initiator.ownedCards || []).find(e => e.cardId === offered.id);
       if (!offeredEntry) {
         const r = `You do not own ${offered.def.emoji || ''} **${offered.def.character || offered.id}**.`;
@@ -447,8 +655,15 @@ module.exports = {
       return String(item.id || item.amount || item);
     }
 
-    const offeredDisplay = formatItemDisplay(offered);
-    const requestedDisplay = formatItemDisplay(requested);
+    let offeredDisplay;
+    let requestedDisplay;
+    if (session.type === 'multi') {
+      offeredDisplay = (session.offeredList || []).map(formatItemDisplay).join(', ');
+      requestedDisplay = (session.requestedList || []).map(formatItemDisplay).join(', ');
+    } else {
+      offeredDisplay = formatItemDisplay(offered);
+      requestedDisplay = formatItemDisplay(requested);
+    }
 
     const embed = new EmbedBuilder()
       .setTitle('Trade Proposal')
@@ -483,6 +698,30 @@ module.exports = {
         const sname = ITEM_DISPLAY_NAMES[sid] || sid;
         const semoji = ITEM_DISPLAY_EMOJIS[sid] || '';
         lines.push(`<@${targetId}> (offering): ${semoji} ${sname} x${session.requestedShard.count}`);
+      } else {
+        lines.push(`<@${targetId}> (offering): None`);
+      }
+      embed.addFields({ name: 'Shard Requirements', value: lines.join('\n'), inline: false });
+    }
+
+    // For multi-item trades, show aggregated shard requirements if any
+    if (session.type === 'multi' && (session.offeredShardTotals || session.requestedShardTotals)) {
+      const lines = [];
+      if (session.offeredShardTotals && Object.keys(session.offeredShardTotals).length) {
+        for (const [sid, cnt] of Object.entries(session.offeredShardTotals)) {
+          const sname = ITEM_DISPLAY_NAMES[sid] || sid;
+          const semoji = ITEM_DISPLAY_EMOJIS[sid] || '';
+          lines.push(`<@${initiatorId}> (offering): ${semoji} ${sname} x${cnt}`);
+        }
+      } else {
+        lines.push(`<@${initiatorId}> (offering): None`);
+      }
+      if (session.requestedShardTotals && Object.keys(session.requestedShardTotals).length) {
+        for (const [sid, cnt] of Object.entries(session.requestedShardTotals)) {
+          const sname = ITEM_DISPLAY_NAMES[sid] || sid;
+          const semoji = ITEM_DISPLAY_EMOJIS[sid] || '';
+          lines.push(`<@${targetId}> (offering): ${semoji} ${sname} x${cnt}`);
+        }
       } else {
         lines.push(`<@${targetId}> (offering): None`);
       }
@@ -537,6 +776,180 @@ module.exports = {
       }
 
       try {
+        if (session.type === 'multi') {
+          const offeredListLocal = session.offeredList || [];
+          const requestedListLocal = session.requestedList || [];
+
+          const sumBeli = (list) => (list || []).filter(i => i.kind === 'beli').reduce((s, i) => s + (i.amount || 0), 0);
+          const offeredBeli = sumBeli(offeredListLocal);
+          const requestedBeli = sumBeli(requestedListLocal);
+
+          if ((initiator.balance || 0) < offeredBeli) {
+            global.tradeSessions.delete(sessionId);
+            return global.safeUpdate(interaction, { content: 'Buyer no longer has enough Beli. Trade cancelled.', embeds: [], components: [] });
+          }
+          if ((target.balance || 0) < requestedBeli) {
+            global.tradeSessions.delete(sessionId);
+            return global.safeUpdate(interaction, { content: 'Target no longer has enough Beli. Trade cancelled.', embeds: [], components: [] });
+          }
+
+          // recompute shard totals if not present
+          const aggShards = (list) => {
+            const map = {};
+            for (const it of list) {
+              if (it.kind !== 'card') continue;
+              const sid = shardIdForAttribute(it.def?.attribute || '');
+              const cnt = shardCostForRank(it.def?.rank || '');
+              if (sid && cnt > 0) map[sid] = (map[sid] || 0) + cnt;
+            }
+            return map;
+          };
+          const offeredShards = session.offeredShardTotals || aggShards(offeredListLocal);
+          const requestedShards = session.requestedShardTotals || aggShards(requestedListLocal);
+
+          for (const [sid, cnt] of Object.entries(offeredShards)) {
+            const have = findItemCount(initiator.items || [], sid);
+            if (have < cnt) {
+              global.tradeSessions.delete(sessionId);
+              return global.safeUpdate(interaction, { content: `<@${session.initiatorId}> lacks required shards. Trade cancelled.`, embeds: [], components: [] });
+            }
+          }
+          for (const [sid, cnt] of Object.entries(requestedShards)) {
+            const have = findItemCount(target.items || [], sid);
+            if (have < cnt) {
+              global.tradeSessions.delete(sessionId);
+              return global.safeUpdate(interaction, { content: `<@${session.targetId}> lacks required shards. Trade cancelled.`, embeds: [], components: [] });
+            }
+          }
+
+          // verify cards still owned and not on teams / equipped
+          for (const it of offeredListLocal) {
+            if (it.kind === 'card') {
+              const idx = (initiator.ownedCards || []).findIndex(e => e.cardId === it.id);
+              if (idx === -1) {
+                global.tradeSessions.delete(sessionId);
+                return global.safeUpdate(interaction, { content: 'Either user no longer owns the required card. Trade cancelled.', embeds: [], components: [] });
+              }
+              if ((initiator.team || []).includes(it.id)) {
+                global.tradeSessions.delete(sessionId);
+                return global.safeUpdate(interaction, { content: 'Offered card is on a team. Trade cancelled.', embeds: [], components: [] });
+              }
+              if (cardHasArtifactEquipped(initiator, it.id)) {
+                global.tradeSessions.delete(sessionId);
+                return global.safeUpdate(interaction, { content: 'Offered card has an artifact equipped. Trade cancelled.', embeds: [], components: [] });
+              }
+            }
+            if (it.kind === 'leveler') {
+              const qtyNeed = Math.max(1, it.qty || 1);
+              const itemHave = (initiator.items || []).find(i => i.itemId === it.id && (i.quantity || 0) >= qtyNeed);
+              if (!itemHave) {
+                global.tradeSessions.delete(sessionId);
+                return global.safeUpdate(interaction, { content: `You no longer have ${qtyNeed}x ${it.def?.name || it.id}. Trade cancelled.`, embeds: [], components: [] });
+              }
+            }
+          }
+          for (const it of requestedListLocal) {
+            if (it.kind === 'card') {
+              const idx = (target.ownedCards || []).findIndex(e => e.cardId === it.id);
+              if (idx === -1) {
+                global.tradeSessions.delete(sessionId);
+                return global.safeUpdate(interaction, { content: 'Target no longer owns required card. Trade cancelled.', embeds: [], components: [] });
+              }
+              if ((target.team || []).includes(it.id)) {
+                global.tradeSessions.delete(sessionId);
+                return global.safeUpdate(interaction, { content: 'Requested card is on a team. Trade cancelled.', embeds: [], components: [] });
+              }
+              if (cardHasArtifactEquipped(target, it.id)) {
+                global.tradeSessions.delete(sessionId);
+                return global.safeUpdate(interaction, { content: 'Requested card has an artifact equipped. Trade cancelled.', embeds: [], components: [] });
+              }
+            }
+            if (it.kind === 'leveler') {
+              const qtyNeed = Math.max(1, it.qty || 1);
+              const itemHave = (target.items || []).find(i => i.itemId === it.id && (i.quantity || 0) >= qtyNeed);
+              if (!itemHave) {
+                global.tradeSessions.delete(sessionId);
+                return global.safeUpdate(interaction, { content: `Target no longer has ${qtyNeed}x ${it.def?.name || it.id}. Trade cancelled.`, embeds: [], components: [] });
+              }
+            }
+          }
+
+          // Perform resource transfers
+          // Transfer shards first: initiator -> target
+          for (const [sid, cnt] of Object.entries(offeredShards)) {
+            initiator.items = removeItem(initiator.items || [], sid, cnt);
+            target.items = target.items || [];
+            const existing = target.items.find(i => i.itemId === sid);
+            if (existing) existing.quantity = (existing.quantity || 0) + cnt;
+            else target.items.push({ itemId: sid, quantity: cnt });
+          }
+          // Transfer shards target -> initiator
+          for (const [sid, cnt] of Object.entries(requestedShards)) {
+            target.items = removeItem(target.items || [], sid, cnt);
+            initiator.items = initiator.items || [];
+            const existing = initiator.items.find(i => i.itemId === sid);
+            if (existing) existing.quantity = (existing.quantity || 0) + cnt;
+            else initiator.items.push({ itemId: sid, quantity: cnt });
+          }
+
+          // Transfer cards: initiator -> target
+          for (const it of offeredListLocal) {
+            if (it.kind !== 'card') continue;
+            const idx = (initiator.ownedCards || []).findIndex(e => e.cardId === it.id);
+            if (idx === -1) continue;
+            const entry = initiator.ownedCards.splice(idx, 1)[0];
+            if (!applyIncomingEntryAsXp(target, entry)) target.ownedCards.push(entry);
+          }
+          // Transfer cards: target -> initiator
+          for (const it of requestedListLocal) {
+            if (it.kind !== 'card') continue;
+            const idx = (target.ownedCards || []).findIndex(e => e.cardId === it.id);
+            if (idx === -1) continue;
+            const entry = target.ownedCards.splice(idx, 1)[0];
+            if (!applyIncomingEntryAsXp(initiator, entry)) initiator.ownedCards.push(entry);
+          }
+
+          // Transfer levelers/items offered -> requested
+          for (const it of offeredListLocal) {
+            if (it.kind !== 'leveler') continue;
+            const qty = Math.max(1, it.qty || 1);
+            initiator.items = removeItem(initiator.items || [], it.id, qty);
+            target.items = target.items || [];
+            const existing = target.items.find(i => i.itemId === it.id);
+            if (existing) existing.quantity = (existing.quantity || 0) + qty;
+            else target.items.push({ itemId: it.id, quantity: qty });
+          }
+          for (const it of requestedListLocal) {
+            if (it.kind !== 'leveler') continue;
+            const qty = Math.max(1, it.qty || 1);
+            target.items = removeItem(target.items || [], it.id, qty);
+            initiator.items = initiator.items || [];
+            const existing = initiator.items.find(i => i.itemId === it.id);
+            if (existing) existing.quantity = (existing.quantity || 0) + qty;
+            else initiator.items.push({ itemId: it.id, quantity: qty });
+          }
+
+          // Balance transfers
+          initiator.balance = (initiator.balance || 0) - offeredBeli + requestedBeli;
+          target.balance = (target.balance || 0) - requestedBeli + offeredBeli;
+
+          initiator.markModified('items'); target.markModified('items');
+          await initiator.save();
+          await target.save();
+
+          // Build summary message
+          const disp = (list) => list.map(i => {
+            if (i.kind === 'beli') return `¥${(i.amount || 0).toLocaleString()}`;
+            if (i.kind === 'card') return `${i.def?.emoji || ''} ${i.def?.character || i.id}`;
+            if (i.kind === 'leveler') return `${i.qty && i.qty > 1 ? i.qty + 'x ' : ''}${i.def?.name || i.id}`;
+            return String(i.id || i.amount || i);
+          }).join(', ');
+
+          const leftStr = disp(offeredListLocal) || 'None';
+          const rightStr = disp(requestedListLocal) || 'None';
+          global.tradeSessions.delete(sessionId);
+          return global.safeUpdate(interaction, { content: `Trade completed: ${leftStr} ↔ ${rightStr}.`, embeds: [], components: [] });
+        }
         if (session.type === 'card_for_card') {
           // verify ownership still holds
           const offeredEntryIndex = (initiator.ownedCards || []).findIndex(e => e.cardId === session.offered.cardId);

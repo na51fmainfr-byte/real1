@@ -1,9 +1,9 @@
 const { createCanvas, loadImage } = require('@napi-rs/canvas');
 
-const COLS = 3;
+const COLS = 5;
 const ROWS = 3;
-const CELL_W = 260;
-const CELL_H = 186;
+const CELL_W = 156;
+const CELL_H = 180;
 const CANVAS_W = COLS * CELL_W;
 const CANVAS_H = ROWS * CELL_H;
 
@@ -24,13 +24,28 @@ async function loadImageWithTimeout(url, ms = 6000) {
   ]);
 }
 
+// Extract Discord CDN URL from a custom emoji string like <:name:123456>
+function getEmojiUrl(emoji) {
+  if (!emoji) return null;
+  const m = emoji.match(/<a?:[^:]+:(\d+)>/);
+  if (!m) return null;
+  return `https://cdn.discordapp.com/emojis/${m[1]}.png`;
+}
+
+// For each slot, decide which URL to load:
+//  - ships & artifacts → image_url
+//  - regular cards → emoji CDN url
+function resolveImageUrl(slot) {
+  if (!slot || !slot.cardDef) return null;
+  const { cardDef } = slot;
+  if (cardDef.ship || cardDef.artifact) return cardDef.image_url || null;
+  return getEmojiUrl(cardDef.emoji) || cardDef.image_url || null;
+}
+
 async function generateBinderCanvas(slots) {
+  const urls = slots.map(resolveImageUrl);
   const imageResults = await Promise.allSettled(
-    slots.map(s =>
-      s && s.cardDef && s.cardDef.image_url
-        ? loadImageWithTimeout(s.cardDef.image_url)
-        : Promise.resolve(null)
-    )
+    urls.map(url => url ? loadImageWithTimeout(url) : Promise.resolve(null))
   );
 
   const canvas = createCanvas(CANVAS_W, CANVAS_H);
@@ -60,12 +75,12 @@ async function generateBinderCanvas(slots) {
     const img = imgResult && imgResult.status === 'fulfilled' ? imgResult.value : null;
 
     if (img) {
-      const PAD = 6;
+      const PAD = 8;
       ctx.globalAlpha = owned ? 1.0 : 0.2;
       ctx.drawImage(img, x + PAD, y + PAD, CELL_W - PAD * 2, CELL_H - PAD * 2);
       ctx.globalAlpha = 1.0;
     } else {
-      ctx.fillStyle = RANK_COLORS[cardDef.rank] || '#444444';
+      ctx.fillStyle = RANK_COLORS[cardDef.rank] || '#333333';
       ctx.globalAlpha = owned ? 0.25 : 0.08;
       ctx.fillRect(x + 1, y + 1, CELL_W - 2, CELL_H - 2);
       ctx.globalAlpha = 1.0;
@@ -75,23 +90,25 @@ async function generateBinderCanvas(slots) {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.62)';
       ctx.fillRect(x + 1, y + 1, CELL_W - 2, CELL_H - 2);
       ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 15px sans-serif';
+      ctx.font = 'bold 13px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('Not Owned', x + CELL_W / 2, y + CELL_H / 2);
     }
 
+    // Rank badge top-right
     const rank = cardDef.rank || '?';
     ctx.shadowColor = '#000000';
     ctx.shadowBlur = 5;
     ctx.fillStyle = RANK_COLORS[rank] || '#ffffff';
-    ctx.font = 'bold 12px sans-serif';
+    ctx.font = 'bold 11px sans-serif';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'top';
-    ctx.fillText(rank, x + CELL_W - 7, y + 7);
+    ctx.fillText(rank, x + CELL_W - 6, y + 6);
     ctx.shadowBlur = 0;
   }
 
+  // Grid separator lines
   ctx.strokeStyle = '#2d333b';
   ctx.lineWidth = 2;
   for (let c = 1; c < COLS; c++) {
@@ -110,4 +127,4 @@ async function generateBinderCanvas(slots) {
   return canvas.toBuffer('image/png');
 }
 
-module.exports = { generateBinderCanvas };
+module.exports = { generateBinderCanvas, PER_PAGE: COLS * ROWS };

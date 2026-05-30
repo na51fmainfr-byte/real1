@@ -11,12 +11,10 @@ const {
 } = require('discord.js');
 const User = require('../models/User');
 const { cards: allCards } = require('../data/cards');
-const { generateBinderCanvas } = require('../utils/binderCanvas');
+const { generateBinderCanvas, PER_PAGE } = require('../utils/binderCanvas');
 
 const RANK_ORDER = { D: 1, C: 2, B: 3, A: 4, S: 5, SS: 6, UR: 7 };
-const PER_PAGE = 9;
 
-// Normalize faculty for consistent comparisons
 function normalizeFaculty(f) {
   if (!f || f === 'null') return null;
   const t = f.trim();
@@ -24,36 +22,47 @@ function normalizeFaculty(f) {
   return t;
 }
 
-// All unique clean factions sorted alphabetically
 const FACTIONS = [...new Set(
   allCards.map(c => normalizeFaculty(c.faculty)).filter(Boolean)
 )].sort();
 
-// Sort cards in a filtered (character or faction) view:
-// 1. Owned & favorited  2. Owned & on team  3. Owned by rank desc  4. Unowned by rank desc
+const TOTAL_CARDS = allCards.length;
+
+// Ships and artifacts always go to the end
+function isSpecial(cardDef) {
+  return !!(cardDef.ship || cardDef.artifact);
+}
+
+// Sort cards purely by rank/mastery, regardless of owned status.
+// Favorites and team always float first (they require ownership anyway).
+// Ships/artifacts are always last.
 function sortFilteredCards(cards, user) {
   const favSet = new Set(user.favoriteCards || []);
   const teamSet = new Set(user.team || []);
+
   return [...cards].sort((a, b) => {
-    // Owned priority
-    if (a.owned !== b.owned) return b.owned ? 1 : -1;
-    if (a.owned && b.owned) {
-      const aFav = favSet.has(a.cardDef.id) ? 1 : 0;
-      const bFav = favSet.has(b.cardDef.id) ? 1 : 0;
-      if (bFav !== aFav) return bFav - aFav;
-      const aTeam = teamSet.has(a.cardDef.id) ? 1 : 0;
-      const bTeam = teamSet.has(b.cardDef.id) ? 1 : 0;
-      if (bTeam !== aTeam) return bTeam - aTeam;
-    }
+    const aSpec = isSpecial(a.cardDef) ? 1 : 0;
+    const bSpec = isSpecial(b.cardDef) ? 1 : 0;
+    if (aSpec !== bSpec) return aSpec - bSpec;
+
+    const aFav = favSet.has(a.cardDef.id) ? 1 : 0;
+    const bFav = favSet.has(b.cardDef.id) ? 1 : 0;
+    if (bFav !== aFav) return bFav - aFav;
+
+    const aTeam = teamSet.has(a.cardDef.id) ? 1 : 0;
+    const bTeam = teamSet.has(b.cardDef.id) ? 1 : 0;
+    if (bTeam !== aTeam) return bTeam - aTeam;
+
     const ra = RANK_ORDER[a.cardDef.rank] || 0;
     const rb = RANK_ORDER[b.cardDef.rank] || 0;
     if (rb !== ra) return rb - ra;
+
     if (b.cardDef.mastery !== a.cardDef.mastery) return b.cardDef.mastery - a.cardDef.mastery;
-    return 0;
+
+    return a.cardDef.character.localeCompare(b.cardDef.character);
   });
 }
 
-// Build the list of {cardDef, owned} for a character search
 function buildCharacterCards(query, user) {
   const q = query.toLowerCase().trim();
   const ownedSet = new Set((user.ownedCards || []).map(e => e.cardId));
@@ -62,34 +71,34 @@ function buildCharacterCards(query, user) {
     if (Array.isArray(c.alias) && c.alias.some(a => a.toLowerCase().includes(q))) return true;
     return false;
   });
-  const cards = matched.map(cardDef => ({ cardDef, owned: ownedSet.has(cardDef.id) }));
-  return sortFilteredCards(cards, user);
+  return sortFilteredCards(matched.map(cardDef => ({ cardDef, owned: ownedSet.has(cardDef.id) })), user);
 }
 
-// Build the list of {cardDef, owned} for a faction filter
 function buildFactionCards(faction, user) {
   const facNorm = normalizeFaculty(faction);
   const ownedSet = new Set((user.ownedCards || []).map(e => e.cardId));
   const matched = allCards.filter(c => normalizeFaculty(c.faculty) === facNorm);
-  const cards = matched.map(cardDef => ({ cardDef, owned: ownedSet.has(cardDef.id) }));
-  return sortFilteredCards(cards, user);
+  return sortFilteredCards(matched.map(cardDef => ({ cardDef, owned: ownedSet.has(cardDef.id) })), user);
 }
 
-// Build the list of {cardDef, owned} for the main binder (history ordered)
+// Main binder: history order (latest/oldest), non-special cards first then special
 function buildMainCards(user, direction) {
   const history = user.history || [];
   const ownedSet = new Set((user.ownedCards || []).map(e => e.cardId));
   const ordered = direction === 'oldest' ? [...history] : [...history].reverse();
-  const result = [];
+
+  const regular = [];
+  const special = [];
   for (const id of ordered) {
     if (!ownedSet.has(id)) continue;
     const cardDef = allCards.find(c => c.id === id);
-    if (cardDef) result.push({ cardDef, owned: true });
+    if (!cardDef) continue;
+    if (isSpecial(cardDef)) special.push({ cardDef, owned: true });
+    else regular.push({ cardDef, owned: true });
   }
-  return result;
+  return [...regular, ...special];
 }
 
-// Build the embed title
 function buildTitle(session) {
   if (session.view === 'main') {
     const dir = session.direction === 'oldest' ? '(Oldest First)' : '(Latest First)';
@@ -100,19 +109,20 @@ function buildTitle(session) {
   return '📖 Binder';
 }
 
-// Build the footer text
 function buildFooter(session) {
   const total = session.allCards.length;
   const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
   const pageStr = `Page ${session.page + 1} / ${totalPages}`;
+
   if (session.view === 'main') {
-    return `${total} card${total !== 1 ? 's' : ''} • ${pageStr}`;
+    const ownedCount = (session.user.ownedCards || []).length;
+    return `${ownedCount} / ${TOTAL_CARDS} cards owned • ${pageStr}`;
   }
-  const owned = session.allCards.filter(c => c.owned).length;
-  return `${owned} / ${total} owned • ${pageStr}`;
+
+  const ownedInFilter = session.allCards.filter(c => c.owned).length;
+  return `${ownedInFilter} / ${total} owned • ${pageStr}`;
 }
 
-// Build action rows: [nav buttons row, faction select row]
 function buildComponents(session) {
   const uid = session.userId;
   const total = session.allCards.length;
@@ -153,16 +163,12 @@ function buildComponents(session) {
       ...FACTIONS.map(f => ({ label: f, value: f }))
     );
 
-  const selectRow = new ActionRowBuilder().addComponents(factionSelect);
-  return [navRow, selectRow];
+  return [navRow, new ActionRowBuilder().addComponents(factionSelect)];
 }
 
-// Generate the canvas + send or update the message
 async function renderBinder(interaction, session, isNew = false) {
   const start = session.page * PER_PAGE;
   const pageSlots = session.allCards.slice(start, start + PER_PAGE);
-
-  // Pad to 9 slots
   const slots = Array.from({ length: PER_PAGE }, (_, i) => pageSlots[i] || null);
 
   let imgBuffer;
@@ -170,10 +176,10 @@ async function renderBinder(interaction, session, isNew = false) {
     imgBuffer = await generateBinderCanvas(slots);
   } catch (err) {
     console.error('[binder] Canvas generation failed:', err);
-    const errMsg = { content: 'Failed to generate binder image. Please try again.', ephemeral: true };
+    const msg = { content: 'Failed to generate binder image. Please try again.', ephemeral: true };
     return isNew
-      ? interaction.reply(errMsg)
-      : global.safeUpdate(interaction, { content: errMsg.content, embeds: [], files: [], components: [] });
+      ? interaction.reply(msg)
+      : global.safeUpdate(interaction, { content: msg.content, embeds: [], files: [], components: [] });
   }
 
   const file = new AttachmentBuilder(imgBuffer, { name: 'binder.png' });
@@ -190,7 +196,6 @@ async function renderBinder(interaction, session, isNew = false) {
   return global.safeUpdate(interaction, payload);
 }
 
-// Store sessions globally (keyed by `${userId}_binder`)
 function getSession(userId) {
   if (!global.binderSessions) global.binderSessions = new Map();
   return global.binderSessions.get(`${userId}_binder`);
@@ -202,7 +207,7 @@ function setSession(userId, session) {
 
 module.exports = {
   name: 'binder',
-  description: 'View your card collection binder (3×3 grid)',
+  description: 'View your card collection binder (5×3 grid)',
 
   async execute({ interaction, message }) {
     const userId = interaction ? interaction.user.id : message.author.id;
@@ -220,21 +225,11 @@ module.exports = {
       return interaction.reply({ content: reply, ephemeral: true });
     }
 
-    const session = {
-      userId,
-      view: 'main',
-      filterName: 'Main',
-      allCards: cards,
-      page: 0,
-      direction: 'latest',
-      user
-    };
+    const session = { userId, view: 'main', filterName: 'Main', allCards: cards, page: 0, direction: 'latest', user };
     setSession(userId, session);
 
     if (message) {
-      // For prefix commands, send canvas to channel and store session for interaction handling
-      const start = session.page * PER_PAGE;
-      const slots = Array.from({ length: PER_PAGE }, (_, i) => (cards[i] || null));
+      const slots = Array.from({ length: PER_PAGE }, (_, i) => cards[i] || null);
       let imgBuffer;
       try { imgBuffer = await generateBinderCanvas(slots); } catch (e) { return message.reply('Failed to generate binder.'); }
       const file = new AttachmentBuilder(imgBuffer, { name: 'binder.png' });
@@ -250,7 +245,7 @@ module.exports = {
   },
 
   async handleButton(interaction, customId) {
-    const [action, uid] = customId.split(':');
+    const [action] = customId.split(':');
     const session = getSession(interaction.user.id);
 
     if (!session || session.userId !== interaction.user.id) {
@@ -273,7 +268,7 @@ module.exports = {
     }
 
     if (action === 'binder_toggle') {
-      if (session.view !== 'main') return interaction.reply({ content: 'Toggle only works in Main binder view.', ephemeral: true });
+      if (session.view !== 'main') return interaction.reply({ content: 'Toggle only works in the Main binder.', ephemeral: true });
       session.direction = session.direction === 'latest' ? 'oldest' : 'latest';
       session.allCards = buildMainCards(session.user, session.direction);
       session.page = 0;
@@ -300,12 +295,11 @@ module.exports = {
     if (!session) return interaction.reply({ content: 'Binder session expired. Run `/binder` again.', ephemeral: true });
 
     const cards = buildCharacterCards(query, session.user);
-    if (!cards.length) {
-      return interaction.reply({ content: `No cards found matching **${query}**.`, ephemeral: true });
-    }
+    if (!cards.length) return interaction.reply({ content: `No cards found matching **${query}**.`, ephemeral: true });
 
-    // Try to find the best display name from the matched cards
-    const displayName = cards[0].cardDef.character || query.charAt(0).toUpperCase() + query.slice(1);
+    const displayName = cards.find(c => !isSpecial(c.cardDef))?.cardDef.character
+      || cards[0].cardDef.character
+      || (query.charAt(0).toUpperCase() + query.slice(1));
 
     session.view = 'character';
     session.filterName = displayName;
@@ -331,9 +325,7 @@ module.exports = {
     }
 
     const cards = buildFactionCards(value, session.user);
-    if (!cards.length) {
-      return interaction.reply({ content: `No cards found for **${value}**.`, ephemeral: true });
-    }
+    if (!cards.length) return interaction.reply({ content: `No cards found for **${value}**.`, ephemeral: true });
 
     session.view = 'faction';
     session.filterName = value;

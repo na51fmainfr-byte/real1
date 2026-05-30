@@ -176,6 +176,7 @@ commands.push({ name: 'rob', description: 'Attempt to rob a user', options: [{ n
 commands.push({ name: 'stoprob', description: 'Stop an active robbery against you' });
 commands.push({ name: 'forfeit', description: 'Forfeit your current duel or isail battle' });
 commands.push({ name: 'collection', description: 'View your card collection' });
+commands.push({ name: 'binder', description: 'View your card collection in a 3×3 visual binder grid' });
 
 // casino gamble command
 commands.push({ name: 'gamble', description: "Visit Sir Crocodile's Casino for a chance to win Beli" });

@@ -44,6 +44,7 @@ const unfavoriteCmd = require('./commands/unfavorite');
 const favoritesCmd = require('./commands/favorites');
 const voteCmd = require('./commands/vote');
 const { startVoteWebhook } = require('./src/voteWebhook');
+const binderCmd = require('./commands/binder');
 const marketCmd = require('./commands/market');
 const marketListCmd = require('./commands/marketlist');
 const marketListingsCmd = require('./commands/marketlistings');
@@ -260,6 +261,9 @@ async function main() {
         if (action === 'market_search_modal') {
           return await marketCmd.handleModal(interaction);
         }
+        if (action === 'binder_char_modal') {
+          return await binderCmd.handleModal(interaction);
+        }
         if (action === 'guildlist_goto_modal') {
           return await require('./commands/owner').handleModal(interaction);
         }
@@ -313,6 +317,9 @@ async function main() {
         if (action === 'inv_category') {
           return await require('./commands/inventory').handleSelect(interaction);
         }
+        if (action === 'binder_faction') {
+          return await binderCmd.handleSelect(interaction);
+        }
       }
 
       if (interaction.isChatInputCommand()) {
@@ -362,6 +369,7 @@ async function main() {
         if (commandName === 'help') return require('./commands/help').execute({ interaction });
         if (commandName === 'crew') return crewCmd.execute({ interaction });
         if (commandName === 'raid') return raidCmd.execute({ interaction });
+        if (commandName === 'binder') return binderCmd.execute({ interaction });
       }
 
       if (interaction.isButton()) {
@@ -502,6 +510,11 @@ async function main() {
 
         if (action === 'trivia_answer' || action === 'trivia_continue') {
           return await triviaCmd.handleButton(interaction);
+        }
+
+        // handle binder navigation
+        if (action && (action === 'binder_prev' || action === 'binder_next' || action === 'binder_toggle' || action === 'binder_char')) {
+          return await binderCmd.handleButton(interaction, interaction.customId);
         }
 
         // handle collection navigation and boost
@@ -688,6 +701,7 @@ async function main() {
       if (cmd === 'timers') return await timersCmd.execute({ message });
       if (cmd === 'trivia') return await triviaCmd.execute({ message });
       if (cmd === 'collection') return await require('./commands/collection').execute({ message });
+      if (cmd === 'binder') return await binderCmd.execute({ message });
       if (cmd === 'info') return await require('./commands/info').execute({ message, args });
       if (cmd === 'upgrade') return await require('./commands/upgrade').execute({ message, args });
       if (cmd === 'set' || cmd === 'setship') return await setShipCmd.execute({ message, args });

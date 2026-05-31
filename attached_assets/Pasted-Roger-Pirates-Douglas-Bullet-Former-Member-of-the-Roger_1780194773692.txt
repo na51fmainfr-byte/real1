@@ -1,0 +1,175 @@
+Roger Pirates:
+Douglas Bullet:
+Former Member of the Roger Pirates, 2650, STR, S, <:2650:1510364754563039413>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/2/600/2650.png
+
+Red-Haired Pirates:
+Hongo: 
+3996, PSY, S, <:3996:1510365396568510495>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/3/900/3996.png
+Emotional Kick, regen, itself=true, -1 turns.
+
+4548, STR, S, <:4548:1510365594937983106>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/4/500/4548.png
+Handing Over the Deadly Poison, cut, -1 turns, effectAmount=3
+
+Rockstar: 
+2553, STR, S, <:2553:1510366726607474740>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/2/500/2553.png
+
+Red-Hair Pirates (Newcomer), 3360, PSY, S, <:3360:1510367098415616172>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/3/300/3360.png
+
+Demon-King-Cleaving Sword, 4022, STR, S, <:4022:1510367397603840141>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/4/000/4022.png
+
+Uta: 
+Uta at Age 4, 6024, BASE, C, https://static.wikia.nocookie.net/onepiece/images/5/5e/Uta_Age_4.png/revision/latest/scale-to-width-down/1000?cb=20250818013715
+
+Oli: 
+Pirate Captain - Subordinate to the Red Haired Pirates, 6025, BASE, B, https://static.wikia.nocookie.net/onepiece/images/f/f8/Oli_Anime_Infobox.png/revision/latest/scale-to-width-down/1000?cb=20240623020916
+
+Ribbitini: 
+Frog toes,  4235, QCK, S, <:4235:1510369609944006877>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/4/200/4235.png
+Captain's Protection, defenceup, itself=true.
+
+Fugar:
+The Adventurer, 4234, INT, S, <:4234:1510370307758624808>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/4/200/4234.png
+Bandmaster's Protection, defenceup, itself=true.
+
+Pururu:
+The Brrave, 4236, PSY, S, <:4236:1510370763603968170>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/4/200/4236.png
+
+
+Linaria: 
+"Igniting" - Captain of the Night Butterfly Pirates, 6026, BASE, B, https://static.wikia.nocookie.net/onepiece/images/b/b8/Linaria_Anime_Infobox.png/revision/latest?cb=20240714020915
+
+Blackbeard Pirates:
+
+Marshall D. Teach:
+446, STR, A, <:0446:1510372470379642991>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/0/400/0446.png
+
+Blackbeard, 447, STR, S, <:0447:1510372723191189727>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/0/400/0447.png
+
+Emperor and Commodore of the Blackbeard Pirates, 4562, QCK, SS, <:4562:1510373445685215293>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/4/500/4562.png
+Emperor Advancing to Take the World, Prone.
+
+Emperor Advancing to his Ambition, 4561, QCK, SS, <:4561:1510374023081627798>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/4/500/4561.png
+Emperor Advancing to Take the World, Prone.
+
+Incoming News, 4402, STR,  S, <:4402:1510375818935930991>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/4/400/4402.png
+
+Blackbeard & Shiryu, 4269, QCK,  S, <:4269:1510376049844682813>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/4/200/4269.png
+
+Starting the Battle of the Worst Generation, 4147, DEX, SS, <:4147:1510442669187530822>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/4/100/4147.png
+Tremor Crush, Prone.
+
+After the Road Ponegliff, 4146, DEX, S, <:4146:1510443129101095012>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/4/100/4146.png
+
+Emperor Chasing the Pirate Empress, 4100, STR, SS, <:4100:1510443515686162472>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/4/100/4100.png
+Darkness of Despair, Prone.
+
+Intervening Emperor, 4099, STR, S, <:4099:1510443972043215039>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/4/000/4099.png
+
+
+Blackbeard & Kuzan:
+Common Interests, 4522, INT/DEX, SS, <:4522:1510374482697785625>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/4/500/4522.png
+Drinking Together, drunk, count=2, scount=2.
+
+Blackbeard:
+Absolute Almighty Powers, 4458, INT/INT, UR, <:4458:1510375180135043082>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/4/400/4458.png
+Despair-Including Darkness and Tremors, doomed, turns=6, count=3, scount=3.
+
+Jesus Burgess: 
+1273, STR, A, <:1273:1510444806592008303>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/1/200/1273.png
+
+
+Champion, 1274, STR, S, <:1274:1510444988109160618>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/1/200/1274.png
+
+Corrida Coliseum A-Block Champion, 1797, DEX, A, <:1797:1510445511004655656>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/1/700/1797.png
+
+Assassin in the Birdcage, 1798, DEX, S, <:1798:1510445979139051530>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/1/700/1798.png
+
+Mr. Stone, 2036, INT, A, <:2036:1510446243921399959>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/2/000/2036.png
+
+Blackbeard Pirates, 2037, INT, S, <:2037:1510446483361628251>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/2/000/2037.png
+
+Brawny Power-User-Hunting Captain, 2125, QCK, A, <:2125:1510447175811862689>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/2/100/2125.png
+
+Corrida Coliseum Finals: Battle Royale, 2917, STR, S, <:2917:1510447506289332304>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/2/900/2917.png
+
+Champion on the Attack, 3286, INT , S, <:3286:1510447831473983688>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/3/200/3286.png
+
+Champion Targeting Power-Users, 3642, INT, S, <:3642:1510448241030861051>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/3/600/3642.png.
+
+New Found Powers, 4101, STR, S, <:4101:1510448439433891883>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/4/100/4101.png
+
+User of the Strong-Strong Fruit, 4102, STR, SS, <:4102:1510448689062220017>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/4/100/4102.png
+Mountain-Heaving Strength, attackup, itself=true, turns=-1, effectAmount=20. 
+
+Strength Aimed at the Heart, 4222, INT, S, <:4222:1510449397140295861>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/4/200/4222.png
+
+Hurled Boulder, 4533, INT, S, <:4533:1510449734760927283>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/4/500/4533.png
+
+Burgess & Shiryu:
+Leading Might and Invisibility, 4551, QCK/INT, SS, <:4551:1510450276094709950>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/4/500/4551.png
+Coordinated Might and Invisibility, Attackup, itself=true, turns=-1, effectAmount=20, count=2, scount=2. 
+
+Marines: 
+
+Rika:
+Waitress at the 153rd Marine Branch, 6028, BASE, C, https://static.wikia.nocookie.net/onepiece/images/1/1b/Rika_Manga_Post_Timeskip_Infobox.png/revision/latest?cb=20170318151459
+
+No Faculty:
+
+Rika:
+Young Girl from Shell's Town, 6027, BASE, D, https://static.wikia.nocookie.net/onepiece/images/5/52/Rika_Anime_Pre_Timeskip_Infobox.png/revision/latest?cb=20190625081911
+Merry:
+Kaya's Butler, 6029, BASE, C, https://static.wikia.nocookie.net/onepiece/images/3/39/Merry_Anime_Pre_Timeskip_Infobox.png/revision/latest?cb=20250722014205
+
+Post Timeskip - Kaya's Butler, 6030, BASE, B, https://static.wikia.nocookie.net/onepiece/images/b/ba/Merry_Anime_Post_Timeskip_Infobox.png/revision/latest?cb=20251026160814
+
+Pandaman: 
+Easter egg Character, 6031, BASE, S, https://static.wikia.nocookie.net/onepiece/images/9/9e/Pandaman_Digitally_Colored_Manga.png/revision/latest?cb=20211120014130
+
+Even Stronger than Satoru Gojo Himself, 6032, BASE, SS, https://i.pinimg.com/1200x/f9/b2/b0/f9b2b0bf25544790bee921a8bfe21656.jpg
+Wrestling abilities, attackup, itself=true.
+
+Banchina: 
+Usopp's Mother, 6032, BASE, D, https://static.wikia.nocookie.net/onepiece/images/4/48/Banchina_Anime_Infobox.png/revision/latest?cb=20250717210954
+
+Johnny:
+48, QCK, C, <:0048:1510468629995716608>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/0/000/0048.png
+
+ Former Bounty Hunting Partner of Roronoa Zoro, 6041, BASE, A, https://static.wikia.nocookie.net/onepiece/images/e/ee/Johnny_Manga_Post_Timeskip_Infobox.png/revision/latest?cb=20231120150337
+
+Yosaku:
+47, STR, C, <:0047:1510469065708408942>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/0/000/0047.png
+
+Former Bounty Hunting Partner of Roronoa Zoro, 6042, BASE, A, https://static.wikia.nocookie.net/onepiece/images/4/4a/Yosaku_Manga_Post_Timeskip_Infobox.png/revision/latest?cb=20231120150325
+
+
+Island of Rare Animals:
+
+Usagihebi:
+Animal of the Island of Rare Animals, 6033, BASE, C,  https://static.wikia.nocookie.net/onepiece/images/3/3e/Usagihebi_Anime_Infobox.png/revision/latest?cb=20171030132109
+
+Cocox: 
+Animal of the Island of Rare Animals, 6034, BASE, C, https://static.wikia.nocookie.net/onepiece/images/b/bc/Cocox_Anime_Infobox.png/revision/latest?cb=20180510134405
+
+Lionbuta: 
+Animal of the Island of Rare Animals, 6035, BASE, C, https://static.wikia.nocookie.net/onepiece/images/0/01/Lionbuta_Anime_Infobox.png/revision/latest?cb=20171030132527
+
+Kabagorila:
+Animal of the Island of Rare Animals, 6036, BASE, C, https://static.wikia.nocookie.net/onepiece/images/a/af/Kabagorilla_Anime_Infobox.png/revision/latest?cb=20210315030158
+
+Kirinkodansuki:
+Animal of the Island of Rare Animals, 6037, BASE, C, https://static.wikia.nocookie.net/onepiece/images/8/89/Kirinkodanuki_Anime_Infobox.png/revision/latest?cb=20210315030202
+
+Kamonohitsuji:
+Animal of the Island of Rare Animals, 6038, BASE, C, https://static.wikia.nocookie.net/onepiece/images/f/f1/Kamonohitsuji_Anime_Infobox.png/revision/latest?cb=20210315030159
+
+Saikangaroo:
+Animal of the Island of Rare Animals, 6039, BASE, C, https://static.wikia.nocookie.net/onepiece/images/a/a7/Saikangaroo_Anime_Infobox.png/revision/latest?cb=20210315030201
+
+Gaimon: 
+0040, PSY, C, <:gaimon:1510470171473739969>, https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/0/000/0040.png
+
+Shimotsuki Family:
+
+Shimotsuki Koushirou:
+Master Swordsman - Teacher of Roronoa Zoro, 6040, BASE, A, https://static.wikia.nocookie.net/onepiece/images/3/39/Shimotsuki_Koushirou_Anime_Pre_Timeskip_Infobox.png/revision/latest?cb=20130619225803

@@ -369,3 +369,31 @@ Use `null` (never a placeholder string) for missing assets:
 - [ ] Effect durations are reasonable (1–5 turns, or -1 for permanent)
 - [ ] `pullable: true` is NOT written (not needed)
 - [ ] All faculties exist in crews.js
+
+---
+
+## Post-Addition Report (REQUIRED)
+
+After every card addition session, the agent **must** output a report listing every card that was added. This lets the requester verify nothing was missed and lets the agent self-check its own work.
+
+### Report format — one row per card:
+
+```
+ID | Character | Title | Rank | Attribute | SA Name | effect | effectDuration | effectAmount | itself | all | count | scount
+```
+
+Use `—` for any field that was not stated. Example:
+
+```
+3996 | Hongo | (none) | S | PSY | Emotional Kick | regen | -1 | — | true | — | — | —
+4548 | Hongo | (none) | S | STR | Handing Over the Deadly Poison | cut | -1 | 3 | — | — | — | —
+4562 | Marshall D. Teach | Emperor and Commodore | SS | QCK | Emperor Advancing to Take the World | prone | — | — | — | — | — | —
+6032 | Pandaman | Even Stronger than Satoru Gojo | SS | BASE | Wrestling abilities | attackup | — | — | true | — | — | —
+6027 | Rika | Young Girl from Shell's Town | D | BASE | — | — | — | — | — | — | — | —
+```
+
+### Rules for the report:
+- **Include every card added**, including cards with no SA.
+- **Do not skip any card.**
+- Output the report immediately after all edits are made, before ending the session.
+- If a card had a special attack stated but any sub-field is missing from the report row, that is a signal that the field was also missing from cards.js — go back and fix it.

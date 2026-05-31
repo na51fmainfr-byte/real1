@@ -599,6 +599,7 @@ exports.moreCards = [
           image_url: "https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/4/200/4207.png",
           effect: "attackup",
           effectDuration: 3,
+          effectAmount: 12,
           itself: true
         }
         ]
@@ -1275,6 +1276,7 @@ exports.moreCards = [
             name: "Wrestling abilities"
           },
           effect: "attackup",
+          effectDuration: -1,
           itself: true
         }
         ]
@@ -1428,7 +1430,7 @@ exports.moreCards = [
           },
           effect: "attackup",
           effectDuration: -1,
-          effectAmount: 25,
+          effectAmount: 12,
           itself: true
         },
         {
@@ -1452,7 +1454,7 @@ exports.moreCards = [
           },
           effect: "attackup",
           effectDuration: -1,
-          effectAmount: 25,
+          effectAmount: 12,
           itself: true
         },
         {
@@ -1476,7 +1478,7 @@ exports.moreCards = [
           },
           effect: "attackup",
           effectDuration: -1,
-          effectAmount: 25,
+          effectAmount: 12,
           itself: true
         },
         {
@@ -1602,7 +1604,7 @@ exports.moreCards = [
           },
           effect: "attackup",
           effectDuration: -1,
-          effectAmount: 25,
+          effectAmount: 12,
           itself: true
         },
         {
@@ -1853,6 +1855,7 @@ exports.moreCards = [
             gif: null
           },
           effect: "attackup",
+          effectAmount: 12,
           effectDuration: -1,
           itself: true
         },
@@ -2075,7 +2078,7 @@ exports.moreCards = [
           },
           effect: "attackup",
           effectDuration: -1,
-          effectAmount: 20,
+          effectAmount: 12,
           itself: true,
           count: 3
         },
@@ -2088,7 +2091,7 @@ exports.moreCards = [
           image_url: "https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/4/100/4110.png",
           effect: "attackup",
           effectDuration: -1,
-          effectAmount: 20,
+          effectAmount: 12,
           itself: true,
           count: 3
         },
@@ -2105,7 +2108,7 @@ exports.moreCards = [
           },
           effect: "attackup",
           effectDuration: -1,
-          effectAmount: 25,
+          effectAmount: 12,
           itself: true
         }
         ]

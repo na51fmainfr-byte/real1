@@ -3065,6 +3065,7 @@ const consolidatedCardData = [
           title: "Waiting at the Cape to Fulfil a Promise",
           id: "3183",
           attribute: "PSY",
+          emoji: "<:3183:1510483140962160711>",
           rank: "S",
           image_url: "https://2shankz.github.io/optc-db.github.io/api/images/full/transparent/3/100/3183.png",
           special_attack: {

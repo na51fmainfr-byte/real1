@@ -116,7 +116,26 @@ module.exports = {
 
   async execute({ message, interaction, args }) {
     const isMessage = !!message;
-    const targetUser = isMessage ? (message.mentions.users.first() || message.author) : (interaction.options.getUser('target') || interaction.user);
+    let targetUser;
+    if (isMessage) {
+      const mention = message.mentions.users.first();
+      if (mention) {
+        targetUser = mention;
+      } else {
+        const maybe = args && args.length ? args[0] : null;
+        if (maybe && /^\d{17,19}$/.test(maybe)) {
+          try {
+            targetUser = await message.client.users.fetch(maybe);
+          } catch (e) {
+            targetUser = message.author;
+          }
+        } else {
+          targetUser = message.author;
+        }
+      }
+    } else {
+      targetUser = interaction.options.getUser('target') || interaction.user;
+    }
     let bountyText = isMessage ? args.slice(1).join(' ') : (interaction.options.getString('bounty') || null);
 
     // If bounty not provided, try to fetch from user profile

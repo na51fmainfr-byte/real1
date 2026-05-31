@@ -3278,7 +3278,7 @@ const consolidatedCardData = [
           id: "6009",
           attribute: "BASE",
           rank: "C",
-          image_url: "https://static.wikia.nocookie.net/onepiece/images/c/c6/Jacksonbanner_Anime_Infobox.png/revision/latest?cb=20210404035046"
+          image_url: "https://static.wikia.nocookie.net/onepiece/images/c/c6/Jacksonbanner_Anime_Infobox.png/revision/latest?cb=20210404046"
         }
         ]
       },

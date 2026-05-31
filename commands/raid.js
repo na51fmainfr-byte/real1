@@ -645,12 +645,18 @@ async function handleVictory(state) {
   const beli   = BELI_BY_RANK[state.boss.rank] || 100;
   const cardId = state.boss.cardId;
   const lines  = [];
+  try {
+    console.log(`[raid] handleVictory: rank=${state.boss.rank}, beli=${beli}, players=${(state.players || []).length}`);
+  } catch (e) {}
 
   for (const p of state.players) {
     try {
       const user = await User.findOne({ userId: String(p.userId) });
       if (!user) continue;
-      user.balance = (user.balance || 0) + beli;
+      const oldBal = Number(user.balance || 0);
+      const newBal = oldBal + Number(beli || 0);
+      console.log(`[raid] reward -> user=${user.userId} old=${oldBal} +${beli} => new=${newBal}`);
+      user.balance = newBal;
       const owned = (user.ownedCards || []).find(e => String(e.cardId) === String(cardId));
       if (!owned) {
         user.ownedCards.push({ cardId, level: 1, xp: 0, starLevel: 0 });

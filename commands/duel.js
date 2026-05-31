@@ -1056,6 +1056,9 @@ async function startStratDraft(pending, interaction) {
     picks: { player1: [], player2: [] }
   };
 
+  // honor optional rank restriction for rank-drafts
+  if (pending && pending.rankRestriction) draftState.rankRestriction = pending.rankRestriction;
+
   const nextPicker = draftState.pickOrder[0];
   const nextName = nextPicker === 'player1' ? pending.discordUser1.username : pending.discordUser2.username;
   const p1Names = 'None';
@@ -1083,15 +1086,17 @@ async function startStratDraft(pending, interaction) {
       const expired = new EmbedBuilder()
         .setColor('#FFFFFF')
         .setTitle('STRAT Duel | Draft')
-        .setDescription(`${pending.discordUser1.username} vs ${pending.discordUser2.username}\n\nDraft timed out due to inactivity.`);
-      await draftMsg.edit({ embeds: [expired], components: [] }).catch(() => {});
-    } catch (e) {}
-    stratDrafts.delete(draftMsg.id);
-  }, 90 * 1000);
-}
+        .setDescription(`Players pick a card one at a time.
 
-// Handle select menus on duel requests (duel type chooser)
-async function handleSelect(interaction) {
+    **${nextName}'s turn to pick.**
+
+    **${pending.discordUser1.username}'s team:**
+    ${p1Names}
+
+    **${pending.discordUser2.username}'s team:**
+    ${p2Names}` + (draftState.rankRestriction ? `
+
+    Allowed Rank: **${draftState.rankRestriction}**` : ''));
   const msgId = interaction.message.id;
   const pending = pendingDuelRequests.get(msgId);
   if (!pending) return interaction.reply({ content: 'This duel request has expired.', ephemeral: true });
@@ -1121,7 +1126,12 @@ async function handleStratModalSubmit(interaction) {
   if (!cardQuery) return interaction.reply({ content: 'No card specified.', ephemeral: true });
 
   const expected = draft.pickOrder[draft.currentPick];
-  const pool = expected === 'player1' ? draft.pending.player1Cards : draft.pending.player2Cards;
+  let pool = expected === 'player1' ? draft.pending.player1Cards : draft.pending.player2Cards;
+  // If this is a rank-restricted draft, limit available picks to that rank
+  if (draft.rankRestriction) {
+    pool = pool.filter(p => (p.def && (p.def.rank || p.rank) ? (p.def.rank || p.rank) : '').toUpperCase() === String(draft.rankRestriction).toUpperCase());
+    if (!pool || pool.length === 0) return interaction.reply({ content: `You have no cards of rank **${draft.rankRestriction}** to pick.`, ephemeral: true });
+  }
   const allowedUserId = expected === 'player1' ? draft.pending.player1Id : draft.pending.player2Id;
   if (interaction.user.id !== allowedUserId) return interaction.reply({ content: 'It is not your pick.', ephemeral: true });
   let chosen = await findCardInPoolByQuery(cardQuery, allowedUserId, pool);
@@ -1230,6 +1240,31 @@ async function handleStratModalSubmit(interaction) {
   try { await interaction.reply({ content: `Picked ${chosen.def.character}`, ephemeral: true }); } catch (e) {}
 }
 
+// Handle Rank Draft modal submit (choose rank to restrict the draft)
+async function handleRankDraftModalSubmit(interaction) {
+  const parts = interaction.customId.split(':');
+  const msgId = parts[1];
+  const pending = pendingDuelRequests.get(msgId);
+  if (!pending) return interaction.reply({ content: 'This duel request has expired.', ephemeral: true });
+  if (interaction.user.id !== pending.player2Id) return interaction.reply({ content: 'Only the challenged player can start a Rank Draft.', ephemeral: true });
+
+  const rawRank = (interaction.fields.getTextInputValue('rank_input') || '').trim().toUpperCase();
+  const VALID = new Set(['D','C','B','A','S','SS','UR']);
+  if (!VALID.has(rawRank)) {
+    return interaction.reply({ content: 'Invalid rank. Use one of: D, C, B, A, S, SS, UR', ephemeral: true });
+  }
+
+  // configure pending to perform a STRAT draft limited to this rank
+  pending.duelType = 'strat';
+  pending.rankRestriction = rawRank;
+
+  // remove the accept message and start the strat draft
+  try { await interaction.channel.messages.fetch(msgId).then(m => m.delete()).catch(() => {}); } catch (e) {}
+  try { await startStratDraft(pending, interaction); } catch (e) { console.error('Failed to start Rank Draft:', e); }
+  pendingDuelRequests.delete(msgId);
+  try { await interaction.reply({ content: `Started Rank Draft (${rawRank})`, ephemeral: true }); } catch (e) {}
+}
+
 module.exports = {
   name: 'duel',
   description: 'Duel another player',
@@ -1240,6 +1275,7 @@ module.exports = {
   duelStates,
   handleSelect,
   handleStratModalSubmit,
+  handleRankDraftModalSubmit,
   async execute({ message, interaction, args }) {
     const userId = message ? message.author.id : interaction.user.id;
     let user1 = await User.findOne({ userId });
@@ -1249,15 +1285,35 @@ module.exports = {
       return interaction.reply({ content: reply, ephemeral: true });
     }
 
-    // Get opponent
+    // Get opponent — support flags in message-mode: `draft` or a rank token (e.g. 'UR', 'SS')
     let opponentId;
+    let forcedMode = null; // 'strat' when draft/rank enforced
+    let forcedRank = null;
     if (message) {
-      const mentionMatch = message.mentions.users.first();
-      if (mentionMatch) {
-        opponentId = mentionMatch.id;
-      } else {
-        opponentId = args[0]?.match(/(\d+)/)?.[1];
+      const rawArgs = Array.isArray(args) ? args.slice() : [];
+      const low = rawArgs.map(a => String(a).toLowerCase());
+      // detect explicit 'draft' flag
+      const idxDraft = low.findIndex(a => a === 'draft');
+      if (idxDraft !== -1) {
+        forcedMode = 'strat';
+        rawArgs.splice(idxDraft, 1);
       }
+      // detect rank token anywhere
+      const RANKS = ['d','c','b','a','s','ss','ur'];
+      const idxRank = low.findIndex(a => RANKS.includes(a));
+      if (idxRank !== -1) {
+        forcedMode = 'strat';
+        forcedRank = String(rawArgs[idxRank]).toUpperCase();
+        rawArgs.splice(idxRank, 1);
+      }
+
+      const mentionMatch = message.mentions.users.first();
+      if (mentionMatch) opponentId = mentionMatch.id;
+      else opponentId = rawArgs[0]?.match(/(\d{17,19})/)?.[1] || null;
+      // fallback: if first arg was numeric in original args
+      if (!opponentId && args && args.length) opponentId = args[0]?.match(/(\d{17,19})/)?.[1] || null;
+      // persist forcedMode/rank to `args` for later usage when building pending state
+      if (forcedMode) args = rawArgs;
     } else {
       opponentId = interaction.options.getUser('opponent').id;
     }
@@ -1419,7 +1475,11 @@ module.exports = {
           .setCustomId('duel_accept:decline')
           .setLabel('Decline')
           .setStyle(ButtonStyle.Secondary)
-          .setEmoji('<:decline:1489632232942342154>')
+          .setEmoji('<:decline:1489632232942342154>'),
+        new ButtonBuilder()
+          .setCustomId('duel_rankdraft:open')
+          .setLabel('Rank Draft')
+          .setStyle(ButtonStyle.Secondary)
       );
     const typeSelectRow = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
@@ -1427,15 +1487,19 @@ module.exports = {
         .setPlaceholder('Select duel type')
         .addOptions([
           { label: 'Casual Duel', value: 'casual', description: 'Regular duel (default)' },
-          { label: 'STRAT Duel', value: 'strat', description: 'Drafting duel — pick cards before start' }
+          { label: 'STRAT Duel', value: 'strat', description: 'Drafting duel — pick cards before start' },
+          { label: 'RANK Draft', value: 'rank', description: 'Draft restricted to a specific rank (challenger sets)' }
         ])
     );
     
+    const componentsToSend = [acceptRow];
+    // If challenger pre-specified a duel type (draft or rank), skip the type selector
+    if (!forcedMode) componentsToSend.push(typeSelectRow);
     let acceptMsg;
     if (message) {
-      acceptMsg = await message.channel.send({ embeds: [acceptEmbed], components: [acceptRow, typeSelectRow] });
+      acceptMsg = await message.channel.send({ embeds: [acceptEmbed], components: componentsToSend });
     } else {
-      acceptMsg = await interaction.reply({ embeds: [acceptEmbed], components: [acceptRow, typeSelectRow], fetchReply: true });
+      acceptMsg = await interaction.reply({ embeds: [acceptEmbed], components: componentsToSend, fetchReply: true });
     }
     
     // Store pending duel request temporarily
@@ -1449,6 +1513,9 @@ module.exports = {
       discordUser1: discordUser1,
       discordUser2: discordUser2
     };
+    // apply any forced modes (draft or rank) requested by the challenger
+    if (forcedMode) pendingState.duelType = forcedMode;
+    if (forcedRank) pendingState.rankRestriction = forcedRank;
     pendingDuelRequests.set(acceptMsg.id, pendingState);
     // Expire after 5 minutes
     // setTimeout(() => pendingDuelRequests.delete(acceptMsg.id), 5 * 60 * 1000);
@@ -1457,6 +1524,30 @@ module.exports = {
   async handleButton(interaction, rawAction, cardId) {
     const msgId = interaction.message.id;
     
+    // Open Rank Draft modal (challenged player chooses rank)
+    if (rawAction === 'duel_rankdraft') {
+      const pending = pendingDuelRequests.get(msgId);
+      if (!pending) return interaction.reply({ content: 'This duel request has expired.', ephemeral: true });
+      if (interaction.user.id !== pending.player2Id) return interaction.reply({ content: 'Only the challenged player can start a Rank Draft.', ephemeral: true });
+      try {
+        const modal = new ModalBuilder()
+          .setCustomId(`duel_rank_modal:${msgId}`)
+          .setTitle('Rank Draft — Enter Rank');
+        const input = new TextInputBuilder()
+          .setCustomId('rank_input')
+          .setLabel('Rank (D, C, B, A, S, SS, UR)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setPlaceholder('e.g. UR');
+        modal.addComponents(new ActionRowBuilder().addComponents(input));
+        await interaction.showModal(modal);
+      } catch (e) {
+        console.error('Failed to show Rank Draft modal:', e);
+        return interaction.reply({ content: 'Failed to open Rank Draft form.', ephemeral: true });
+      }
+      return;
+    }
+
     // Handle accept/decline actions
     if (rawAction === 'duel_accept') {
       const pending = pendingDuelRequests.get(msgId);

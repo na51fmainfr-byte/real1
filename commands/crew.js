@@ -180,6 +180,18 @@ module.exports = {
         if (sub === 'remove') sub = 'kick';
       }
       targetUser = message.mentions.users.first() || null;
+      // If a raw numeric ID was provided (and no mention was used), try fetching that user
+      if (!targetUser && message && args && args.length) {
+        const maybe = args[0];
+        const idMatch = String(maybe).match(/^(\d{17,19})$/);
+        if (idMatch) {
+          try {
+            targetUser = await message.client.users.fetch(idMatch[1]);
+          } catch (e) {
+            targetUser = null;
+          }
+        }
+      }
     }
 
     // ── VIEW ─────────────────────────────────────────────────────────────────

@@ -291,6 +291,9 @@ async function main() {
         if (action === 'duel_strat_modal') {
           return await duelCmd.handleStratModalSubmit(interaction);
         }
+        if (action === 'duel_rank_modal') {
+          return await duelCmd.handleRankDraftModalSubmit(interaction);
+        }
           if (action === 'raid_join_modal') {
             return await raidCmd.handleJoinModal(interaction);
           }

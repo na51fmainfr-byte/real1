@@ -1388,4 +1388,5 @@ module.exports = {
   formatCardId,
   consumeShipCola,
   applyXpToEquippedArtifact,
+  normalizeCardId,
 };
